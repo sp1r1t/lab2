@@ -29,6 +29,7 @@ public class Client {
     // name of the client
     private String name;
 
+    // logger
     private Logger logger;
     {
         // set up logger
@@ -37,28 +38,38 @@ public class Client {
         logger.debug("Logger is set up.");
     }
 
+    // config
     private Config config;
 
+    // download directory
     private String downloadDir;
 
+    // proxy hostname
     private String proxy;
 
+    // port for proxy connection
     private Integer tcpPort;
 
+    // the shell
     private Shell shell;
 
+    // command interface
     private IClientCli cli;
     
+    // thread pool
     private ExecutorService pool;
 
+    // socket to connect to proxy
     private Socket proxySocket;
 
+    // io streams
     private PrintWriter out;
     private BufferedReader in;
 
     private ObjectOutputStream oos;
     private ObjectInputStream ois;
 
+    // session id
     private UUID sid;
 
     /**
