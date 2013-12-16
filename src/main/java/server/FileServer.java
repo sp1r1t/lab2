@@ -1,26 +1,20 @@
 package server;
 
-import message.*;
-import message.request.*;
-import message.response.*;
-
-import model.*;
-
 import java.util.*;
 import java.util.regex.*;
 import java.util.concurrent.*;
-
 import java.io.*;
-
 import java.nio.*;
 import java.nio.file.*;
 import java.nio.charset.*;
-
 import java.net.*;
 
 import cli.*;
-
 import util.*;
+import message.*;
+import message.request.*;
+import message.response.*;
+import model.*;
 
 import org.apache.log4j.*;
 
@@ -41,8 +35,9 @@ public class FileServer {
     private static Logger logger;
     {
         // set up logger
-        logger = Logger.getLogger(FileServer.class);
+        logger = Logger.getLogger("FileServer");
         BasicConfigurator.configure();
+        logger.setLevel(Level.ERROR);
         logger.debug("Logger is set up.");
     }
 
@@ -174,6 +169,7 @@ public class FileServer {
         KeepAlive keepAlive = new KeepAlive(udpPort, proxy, alivePeriod, tcpPort);
         pool.submit(keepAlive);
 
+        System.out.println("FileServer started.");
 
         // for now just join the shell. the main thread is kept alive to 
         // possibly implement respawning of unintenionally cancelled threads 
@@ -291,7 +287,7 @@ public class FileServer {
         public KeepAlive(int udpPort, String proxy, 
                                int alivePeriod, int tcpPort){
             // init logger
-            logger = Logger.getLogger(KeepAlive.class);
+            logger = Logger.getLogger("FileServer.KeepAlive");
 
             // init params
             this.udpPort = udpPort;
@@ -342,7 +338,7 @@ public class FileServer {
         ServerSocket serverSocket;
 
         public ProxyConnectionListener() {
-            logger = Logger.getLogger(ProxyConnectionListener.class);
+            logger = Logger.getLogger("FileServer.ProxyConnectionListener");
         }
 
         /**
@@ -400,7 +396,7 @@ public class FileServer {
          */
         public ProxyConnection(Socket clientSocket) {
             this.clientSocket = clientSocket;
-            logger = Logger.getLogger(ProxyConnection.class);
+            logger = Logger.getLogger("FileServer.ProxyConnection");
         }
 
         /**
@@ -565,7 +561,7 @@ public class FileServer {
         private Logger logger;
         
         public FileServerCli() {
-            logger = Logger.getLogger(FileServerCli.class);
+            logger = Logger.getLogger("FileServer.FileServerCli");
         }
 
         @Command

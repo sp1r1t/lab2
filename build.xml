@@ -32,7 +32,7 @@
 
 	<target name="test" description="Test the solution" depends="compile">
 		<mkdir dir="${reports.dir}" />
-		<junit includeantruntime="true" logfailedtests="true" showoutput="true" printsummary="true">
+		<junit includeantruntime="true" showoutput="true" printsummary="true">
 			<classpath refid="project.classpath" />
 			<formatter type="plain" />
 			<batchtest fork="false" todir="${reports.dir}">

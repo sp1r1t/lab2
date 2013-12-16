@@ -33,8 +33,9 @@ public class Client {
     private Logger logger;
     {
         // set up logger
-        logger = Logger.getLogger(Client.class);
+        logger = Logger.getLogger("Client");
         BasicConfigurator.configure();
+        logger.setLevel(Level.ERROR);
         logger.debug("Logger is set up.");
     }
 
@@ -147,6 +148,8 @@ public class Client {
         logger.info("Starting the shell.");
         Future shellfuture = pool.submit(shell);
 
+        System.out.println("Client started."); 
+
         /*
         // for now join shell
         try {
@@ -168,7 +171,7 @@ public class Client {
         private Logger logger;
 
         public ClientCli() {
-            logger = Logger.getLogger(ClientCli.class);
+            logger = Logger.getLogger("Client.ClientCli");
         }
 
         @Command
@@ -366,7 +369,7 @@ public class Client {
                     logger.debug("Couldn't write file.");
                     x.printStackTrace();
                 }
-                
+                resp = dlresp;
             }
             return resp;
         }

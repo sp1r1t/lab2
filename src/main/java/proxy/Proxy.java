@@ -1,29 +1,22 @@
 package proxy;
 
-import message.*;
-import message.request.*;
-import message.response.*;
-
-import model.*;
-
 import java.util.*;
 import java.util.regex.*;
 import java.util.concurrent.*;
-
 import java.io.*;
 import java.nio.*;
 import java.nio.file.*;
 import java.nio.charset.*;
-
 import java.net.*;
 
 import cli.*;
-
 import util.*;
-
 import model.*;
-
 import proxy.*;
+import message.*;
+import message.request.*;
+import message.response.*;
+import model.*;
 
 import org.apache.log4j.*;
 
@@ -45,7 +38,8 @@ public class Proxy {
     private static Logger logger;
     {
         // set up logger
-        logger = Logger.getLogger(Proxy.class);
+        logger = Logger.getLogger("Proxy");
+        logger.setLevel(Level.ERROR);
         BasicConfigurator.configure();
         logger.debug("Logger is set up.");
     }
@@ -193,7 +187,7 @@ public class Proxy {
         logger.info("Starting the shell.");
         Future shellfuture = pool.submit(shell);
 
-
+        System.out.println("Proxy started."); 
 /*
         // for now join shell
         try {
@@ -259,7 +253,7 @@ public class Proxy {
                                    config.getString(username + ".password"),
                                    config.getInt(username + ".credits")));
                 // debug
-                users.get(users.size() - 1).print();
+                //users.get(users.size() - 1).print();
             }
         }
         catch (Exception x) {
@@ -316,14 +310,13 @@ public class Proxy {
         /** 
          * Member variables
          */
-        private Logger logger;
         private DatagramSocket aliveSocket;
 
         /**
          * Constructor
          */
         public KeepAliveListener(){
-            logger = Logger.getLogger(KeepAliveListener.class);
+            logger = Logger.getLogger("Proxy.KeepAliveListener");
         }
 
         /**
@@ -400,7 +393,7 @@ public class Proxy {
         ServerSocket serverSocket;
 
         public ClientConnectionListener() {
-            logger = Logger.getLogger(ClientConnectionListener.class);
+            logger = Logger.getLogger("Proxy.ClientConnectionListener");
         }
 
         /**
@@ -459,7 +452,7 @@ public class Proxy {
         public ClientConnection(Socket clientSocket) {
             this.clientSocket = clientSocket;
             clientSockets.add(clientSocket);
-            logger = Logger.getLogger(ClientConnection.class);
+            logger = Logger.getLogger("Proxy.ClientConnection");
         }
 
         /**
@@ -762,7 +755,7 @@ public class Proxy {
             
             // add file to file cache
             fileCache.add(request.getFilename());
-            return new MessageResponse("Uploaded.");
+            return new MessageResponse("success");
         }
 
         @Override
@@ -773,7 +766,7 @@ public class Proxy {
                 user.logout();
                 user = null;
             }
-            return new MessageResponse("Logged out.");
+            return new MessageResponse("Successfully logged out.");
         }
         
     }
@@ -783,7 +776,7 @@ public class Proxy {
         FileServer fs;
 
         public UpdateFileCache(FileServer fs) {
-            logger = Logger.getLogger(UpdateFileCache.class);
+            logger = Logger.getLogger("Proxy.UpdateFileCache");
             this.fs = fs;
         }
 
@@ -809,7 +802,7 @@ public class Proxy {
         private Logger logger;
 
         public ProxyCli() {
-            logger = Logger.getLogger(ProxyCli.class);
+            logger = Logger.getLogger("Proxy.ProxyCli");
         }
 
         @Command

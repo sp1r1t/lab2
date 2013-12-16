@@ -17,7 +17,7 @@ class FileServer {
     private Date lastAlive;
 
     public FileServer(String host, Integer port,  Integer tcpPort) {
-        logger = Logger.getLogger(FileServer.class);
+        logger = Logger.getLogger("FileServer");
         this.host = host;
         this.port = port;
         this.usage = 0;
