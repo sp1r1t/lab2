@@ -1,5 +1,0 @@
-JCA             Java Cryptography Architecture
-JCE             Java Cryptography Extension
-CSP             Cryptogrphice Service Provider
-SPI             Service Provider Interface
-
