@@ -1,0 +1,521 @@
+package client;
+
+import message.Response;
+import message.Request;
+import message.request.*;
+import message.response.*;
+
+import model.DownloadTicket;
+
+import java.util.LinkedHashSet;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Scanner;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
+import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.MissingResourceException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.ExecutionException;
+import java.util.UUID;
+
+import java.io.IOException;
+import java.io.BufferedReader;
+import java.io.PrintWriter;
+import java.io.FileWriter;
+import java.io.FileReader;
+import java.io.BufferedWriter;
+import java.io.InputStreamReader;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.File;
+import java.io.FileNotFoundException;
+
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.charset.Charset;
+import java.nio.ByteBuffer;
+
+import java.net.*;
+
+import cli.Command;
+import cli.Shell;
+
+import util.Config;
+import util.FileServerConnection;
+
+import client.IClientCli;
+
+import org.apache.log4j.Logger;
+import org.apache.log4j.BasicConfigurator;
+
+/**
+ * The Client
+ */
+public class Client {
+    /**
+     * private variables
+     */
+    // name of the client
+    private String name;
+
+    private Logger logger;
+
+    private String downloadDir;
+
+    private String proxy;
+
+    private Integer tcpPort;
+
+    private Shell shell;
+
+    private IClientCli cli;
+    
+    private ExecutorService pool;
+
+    private Socket proxySocket;
+
+    private PrintWriter out;
+    private BufferedReader in;
+
+    private ObjectOutputStream oos;
+    private ObjectInputStream ois;
+
+    private UUID sid;
+
+    private InputStream sysin;
+
+    /**
+     * main function
+     */
+    public static void main(String[] args) {
+        Client client = new Client("client");
+        client.run();
+        return;
+    }
+
+    /**
+     * Constructor
+     */
+    public Client(String name) {
+        // set name
+        this.name = name;
+
+        sysin = System.in;
+
+        // set up logger
+        logger = Logger.getLogger(Client.class);
+        BasicConfigurator.configure();
+        logger.debug("Logger is set up.");
+
+        // read config
+        String key = name;
+        try {
+            Config config = new Config(key);
+            key = "download.dir";
+            downloadDir = config.getString(key);
+            key = "proxy.host";
+            proxy = config.getString(key);
+            key = "proxy.tcp.port";
+            tcpPort = config.getInt(key);
+        } catch (MissingResourceException x) {
+            if(key == name) {
+                logger.fatal("Config " + key + 
+                             ".properties does not exist.");
+            } else {
+                logger.fatal("Key " + key + " is not defined.");
+            }
+            System.exit(1);
+        }
+
+        shell = null;
+    }
+
+    public Client(String name, Config config, Shell shell) {
+        // set name
+        this.name = name;
+
+        sysin = null;
+
+        // set up logger
+        logger = Logger.getLogger(Client.class);
+        BasicConfigurator.configure();
+        logger.debug("Logger is set up.");
+
+        // read config
+        String key = name;
+        try {
+            key = "download.dir";
+            downloadDir = config.getString(key);
+            key = "proxy.host";
+            proxy = config.getString(key);
+            key = "proxy.tcp.port";
+            tcpPort = config.getInt(key);
+        } catch (MissingResourceException x) {
+            if(key == name) {
+                logger.fatal("Config " + key + 
+                             ".properties does not exist.");
+            } else {
+                logger.fatal("Key " + key + " is not defined.");
+            }
+            System.exit(1);
+        }
+
+        this.shell = shell;
+    }
+
+    public void run() {
+        // set up thread pool
+        pool = Executors.newFixedThreadPool(10);
+
+        // connect to proxy
+        proxySocket = null;
+        try {
+            proxySocket = new Socket(proxy, tcpPort);
+
+            oos = new ObjectOutputStream(proxySocket.getOutputStream());
+            ois = new ObjectInputStream(proxySocket.getInputStream());
+
+            out = new PrintWriter(proxySocket.getOutputStream(), true);
+            in =  new BufferedReader(
+                    new InputStreamReader(proxySocket.getInputStream()));
+
+        } catch(UnknownHostException x) {
+            logger.info("Host not known.");
+            logger.info("Shutting down client.");
+            return;
+        } catch(IOException x) {
+            logger.info("Coudln't connect to proxy.");
+            logger.info("Shutting down client.");
+            return;
+        } 
+
+        // set up shell
+        cli = new ClientCli();
+        if(shell == null) {
+            shell = new Shell(name, System.out, System.in);
+        }
+        shell.register(cli);
+        logger.info("Starting the shell.");
+        Future shellfuture = pool.submit(shell);
+
+        /*
+        // for now join shell
+        try {
+            shellfuture.get();
+        } catch (InterruptedException x) {
+            logger.info("Caught interrupt while waiting for shell.");
+        } catch (ExecutionException x) {
+            logger.info("Caught ExecutionExcpetion while waiting for shell.");
+            } */
+
+        logger.info("Closing main.");
+    }
+
+    public IClientCli getCli() {
+        return cli;
+    }
+
+    class ClientCli implements IClientCli {
+        private Logger logger;
+
+        public ClientCli() {
+            logger = Logger.getLogger(ClientCli.class);
+        }
+
+        @Command
+        public LoginResponse login(String username, String password)
+            throws IOException {
+            logger.debug("started login command");
+            logger.debug("username is " + username);
+            logger.debug("password is " + password);
+
+            LoginRequest req = new LoginRequest(username, password);
+            oos.writeObject(req);
+
+            LoginResponse resp;
+            try {
+                Object o = ois.readObject();
+                if(o instanceof LoginResponse) {
+                    resp = (LoginResponse) o;
+                    logger.debug(resp.getType());
+                    if(resp.getType() == LoginResponse.Type.SUCCESS) {
+                        sid = resp.getSid();
+                        logger.debug("Got sid " + sid);
+                    } else if (resp.getType() == 
+                               LoginResponse.Type.WRONG_CREDENTIALS) {
+                        logger.debug("Credentials are wrong.");
+                    } else if (resp.getType() ==
+                               LoginResponse.Type.IS_LOGGED_IN) {
+                        logger.debug("Already logged in.");
+                    }
+                    return resp;
+                }
+                else {
+                    logger.error("Login response corrupted.");
+                }
+            } catch (ClassNotFoundException x) {
+                logger.info("Class not found.");
+            }
+            return null;
+        }
+
+        @Command
+        public Response credits() throws IOException {
+            CreditsRequest req = new CreditsRequest(sid);
+            oos.writeObject(req);
+
+            Response response = null;
+            try {
+                Object o = ois.readObject();
+                if(o instanceof CreditsResponse) {
+                    CreditsResponse cresp = (CreditsResponse) o;
+                    response = new MessageResponse("You have " + 
+                                                   cresp.getCredits() + 
+                                                   " credits left.");
+                }
+                else if(o instanceof MessageResponse) {
+                    response = (MessageResponse) o;
+                    //logger.debug(response.toString());
+                }
+                else {
+                    logger.error("Credits response corrupted.");
+                }
+            } catch (ClassNotFoundException x) {
+                logger.info("Class not found.");
+            }
+            return response;
+        }
+
+        @Command
+        public Response buy(long credits) throws IOException {
+            BuyRequest req = new BuyRequest(sid, credits);
+            oos.writeObject(req);
+
+            Response response = null;
+            try {
+                Object o = ois.readObject();
+                if(o instanceof BuyResponse) {
+                    BuyResponse bresp = (BuyResponse) o;
+                    response = new MessageResponse("You now have " + 
+                                                   bresp.getCredits() + 
+                                                   " credits.");
+                }
+                else if(o instanceof MessageResponse) {
+                    response = (MessageResponse) o;
+                    //logger.debug(response.toString());
+                }
+                else {
+                    logger.error("Credits response corrupted.");
+                }
+            } catch (ClassNotFoundException x) {
+                logger.info("Class not found.");
+            }
+            return response;
+
+        }
+
+        @Command
+        public Response list() throws IOException {
+            ListRequest req = new ListRequest(sid);
+            oos.writeObject(req);
+
+            Response resp = null;
+            try {
+                Object o = ois.readObject();
+                if(o instanceof ListResponse) {
+                    resp = (ListResponse) o;
+                    //logger.debug(resp.toString());
+                }
+                else if(o instanceof MessageResponse) {
+                    resp = (MessageResponse) o;
+                }
+                else {
+                    logger.error("List response corrupted.");
+                }
+            } catch (ClassNotFoundException x) {
+                logger.info("Class not found.");
+                }
+            return resp;
+        }
+ 
+        @Command
+        public Response download(String filename) throws IOException {
+            DownloadTicketRequest req = 
+                new DownloadTicketRequest(sid, filename);
+            oos.writeObject(req);
+
+
+            // get download ticket
+            DownloadTicket ticket = null;
+            Response resp = null;
+            try {
+                Object o = ois.readObject();
+                if(o instanceof DownloadTicketResponse) {
+                    DownloadTicketResponse tresp = (DownloadTicketResponse) o;
+                    ticket = tresp.getTicket();
+                    //logger.debug(resp.toString());
+                }
+                else if(o instanceof MessageResponse) {
+                    resp = (MessageResponse) o;
+                }
+                else {
+                    logger.error("List response corrupted.");
+                }
+            } catch (ClassNotFoundException x) {
+                logger.info("Class not found.");
+            }
+
+            // request download
+            DownloadFileResponse dlresp = null;
+            if(ticket != null) {
+                String host = ticket.getAddress().getHostAddress();
+                int port = ticket.getPort();
+                DownloadFileRequest request = new DownloadFileRequest(ticket);
+                FileServerConnection fscon = 
+                    new FileServerConnection(host, port, request);
+                Response response = fscon.call();
+                if(response instanceof DownloadFileResponse) {
+                    dlresp = (DownloadFileResponse) response;
+                    byte[] content = dlresp.getContent();
+                } 
+                else if(response instanceof MessageResponse) {
+                    return (MessageResponse) response;
+                }
+            }
+            
+            // save file
+            if(dlresp != null && 
+               filename.equals(dlresp.getTicket().getFilename())) {
+                byte[] content = dlresp.getContent();
+                File file = new File(downloadDir, filename);
+                try {
+                    if(file.exists()) {
+                        file.delete();
+                    }
+                    file.createNewFile();
+                    FileWriter fw = new FileWriter(file);
+                    BufferedWriter bw = new BufferedWriter(fw);
+                    fw.write(new String(content), 0, content.length);
+                    bw.close();
+                } catch (IOException x) {
+                    logger.debug("Couldn't write file.");
+                    x.printStackTrace();
+                }
+                
+            }
+            return resp;
+        }
+
+        @Command
+        public MessageResponse upload(String filename) throws IOException {
+            File file = new File(downloadDir, filename);
+            String filestring = "";
+            BufferedReader br;
+            MessageResponse response = null;
+            try {
+                br = new BufferedReader(new FileReader(file));
+                
+                
+                while(br.ready()) {
+                    filestring = filestring + br.readLine();
+                }
+                byte[] content = filestring.getBytes();
+                br.close();
+                
+                Request request = new UploadRequest(sid, filename, 1, content);
+                oos.writeObject(request);
+
+                try {
+                    Object o = ois.readObject();
+                    if(o instanceof MessageResponse) {
+                        response = (MessageResponse) o;
+                    } else {
+                        response = new MessageResponse("Upload failed.");
+                    }
+                } catch (ClassNotFoundException x) {
+                    logger.info("Class not found.");
+                    x.printStackTrace();
+                }
+                
+            } catch (FileNotFoundException x) {
+                response = new MessageResponse("File does not exist.");
+            } catch (IOException x) {
+                logger.debug("Couldn't read file.");
+                    x.printStackTrace();
+            }
+            
+            return response;
+        }
+
+        @Command
+        public MessageResponse logout() throws IOException {
+            LogoutRequest req = new LogoutRequest(sid);
+            oos.writeObject(req);
+
+            MessageResponse resp = null;
+            try {
+                Object o = ois.readObject();
+                if(o instanceof MessageResponse) {
+                    resp = (MessageResponse) o;
+                    logger.debug(resp.toString());
+                }
+                else {
+                    logger.error("Logout response corrupted.");
+                }
+            } catch (ClassNotFoundException x) {
+                logger.info("Class not found.");
+                }
+            return resp;
+        }
+    
+        @Command
+        public MessageResponse exit() throws IOException {
+            logger.info("Exiting shell.");
+
+            // clean up
+            pool.shutdownNow();
+            try {
+                proxySocket.close();
+            } catch (IOException x) {
+                logger.info("Caught IOException.");
+            }
+            
+            // close shell
+            shell.close();
+
+            // close System.in
+            if( sysin == System.in)
+                System.in.close();
+
+            logger.info("Shutting down.");
+            return new MessageResponse("Shutdown client.");
+        }
+
+        @Command
+        public void muh() throws IOException {
+            //logger.debug("muuuh");
+            // proxy test
+            String muh = new String("muuuh");
+            oos.writeObject(muh);
+            try {
+                Object o = ois.readObject();
+                if(o instanceof MessageResponse) {
+                    MessageResponse mresp = (MessageResponse) o;
+                    logger.info(mresp.getMessage());
+                }
+            } catch (ClassNotFoundException x) {
+                logger.info("Class not found.");
+            }
+        }
+    }
+
+}
