@@ -1,68 +1,32 @@
 package proxy;
 
-import message.Response;
-import message.Request;
+import message.*;
 import message.request.*;
 import message.response.*;
 
-import model.DownloadTicket;
-import model.UserInfo;
+import model.*;
 
-import java.util.Date;
-import java.util.Calendar;
-import java.util.LinkedHashSet;
-import java.util.Map;
-import java.util.HashMap;
-import java.util.Set;
-import java.util.HashSet;
-import java.util.Scanner;
-import java.util.regex.Pattern;
-import java.util.regex.Matcher;
-import java.util.Arrays;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.MissingResourceException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Callable;
-import java.util.UUID;
-import java.util.Timer;
-import java.util.TimerTask;
+import java.util.*;
+import java.util.regex.*;
+import java.util.concurrent.*;
 
-import java.io.IOException;
-import java.io.BufferedReader;
-import java.io.PrintWriter;
-import java.io.InputStreamReader;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.InputStream;
-
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
-import java.nio.charset.Charset;
-import java.nio.ByteBuffer;
+import java.io.*;
+import java.nio.*;
+import java.nio.file.*;
+import java.nio.charset.*;
 
 import java.net.*;
 
-import cli.Command;
-import cli.Shell;
+import cli.*;
 
-import util.Config;
-import util.ChecksumUtils;
-import util.FileServerConnection;
+import util.*;
 
-import model.FileServerInfo;
+import model.*;
 
-import proxy.User;
-import proxy.FileServer;
+import proxy.*;
 
-import org.apache.log4j.Logger;
-import org.apache.log4j.BasicConfigurator;
-import org.apache.log4j.Level;
+import org.apache.log4j.*;
+
 
 /**
  * The Proxy
@@ -79,6 +43,12 @@ public class Proxy {
 
     // logger
     private static Logger logger;
+    {
+        // set up logger
+        logger = Logger.getLogger(Proxy.class);
+        BasicConfigurator.configure();
+        logger.debug("Logger is set up.");
+    }
 
     // a list of all users
     private ArrayList<User> users;
@@ -104,13 +74,17 @@ public class Proxy {
     // client connection listener 
     private ClientConnectionListener CCL;
 
+    // client connection sockets
+    private ArrayList<Socket> clientSockets = new ArrayList<Socket>();
+
     // the thread pool
     private ExecutorService pool;
 
     // object input stream
     private ObjectInputStream ois;
 
-    private InputStream in;
+    // config
+    private Config config;
 
     //* everything below is read from the config file *//
 
@@ -144,94 +118,15 @@ public class Proxy {
      * Constructor
      */
     public Proxy(String name) {
-        // set name
         this.name = name;
-
-        in = System.in;
-
-        // set up logger
-        logger = Logger.getLogger(Proxy.class);
-        BasicConfigurator.configure();
-        //logger.setLevel(Level.toLevel("FATAL"));
-        logger.debug("Logger is set up.");
-
-        // read config
-        String key = name;
-        try {
-            Config config = new Config(key);
-            key = "tcp.port";
-            tcpPort = config.getInt(key);
-            key = "udp.port";
-            udpPort = config.getInt(key);
-            key = "fileserver.timeout";
-            timeout = config.getInt(key);
-            key = "fileserver.checkPeriod";
-            checkPeriod = config.getInt(key);
-        }
-        catch (MissingResourceException x) {
-            if(key == name) {
-                logger.fatal("Config " + key + 
-                             ".properties does not exist.");
-            } else {
-                logger.fatal("Key " + key + " is not defined.");
-            }
-            System.exit(1);
-        }
-
-        // create lists
-        users = new ArrayList<User>();
-        fileservers = new ArrayList<FileServer>();
-        fsUsage = new HashMap<FileServer, Integer>();
-        fileCache = new HashSet<String>();
-
-
-        logger.info(name + " configured, starting services.");
-        
-        this.shell = null;
+        this.config = new Config(name);
+        this.shell = new Shell(name, System.out, System.in);
     }
 
     public Proxy(String name, Config config, Shell shell) {
-        // set name
         this.name = name;
-        
-        in = null;
-
-        // set up logger
-        logger = Logger.getLogger(Proxy.class);
-        BasicConfigurator.configure();
-        logger.debug("Logger is set up.");
-
-        // read config
-        String key = name;
-        try {
-            key = "tcp.port";
-            tcpPort = config.getInt(key);
-            key = "udp.port";
-            udpPort = config.getInt(key);
-            key = "fileserver.timeout";
-            timeout = config.getInt(key);
-            key = "fileserver.checkPeriod";
-            checkPeriod = config.getInt(key);
-        }
-        catch (MissingResourceException x) {
-            if(key == name) {
-                logger.fatal("Config " + key + 
-                             ".properties does not exist.");
-            } else {
-                logger.fatal("Key " + key + " is not defined.");
-            }
-            System.exit(1);
-        }
-
-        // create lists
-        users = new ArrayList<User>();
-        fileservers = new ArrayList<FileServer>();
-        fsUsage = new HashMap<FileServer, Integer>();
-        fileCache = new HashSet<String>();
-
+        this.config = config;
         this.shell = shell;
-
-        logger.info(name + " configured, starting services.");
     }
 
 
@@ -239,6 +134,37 @@ public class Proxy {
      * Entry function for running the services
      */
     public void run() throws IOException {
+        // read proxy config
+        String key = name;
+        try {
+            key = "tcp.port";
+            tcpPort = config.getInt(key);
+            key = "udp.port";
+            udpPort = config.getInt(key);
+            key = "fileserver.timeout";
+            timeout = config.getInt(key);
+            key = "fileserver.checkPeriod";
+            checkPeriod = config.getInt(key);
+        }
+        catch (MissingResourceException x) {
+            if(key == name) {
+                logger.fatal("Config " + key + 
+                             ".properties does not exist.");
+            } else {
+                logger.fatal("Key " + key + " is not defined.");
+            }
+            System.exit(1);
+        }
+
+        // create lists
+        users = new ArrayList<User>();
+        fileservers = new ArrayList<FileServer>();
+        fsUsage = new HashMap<FileServer, Integer>();
+        fileCache = new HashSet<String>();
+
+
+        logger.info(name + " configured, starting services.");
+
         // read user config
         readUserConfig();
 
@@ -263,10 +189,6 @@ public class Proxy {
 
         // give birth to shell thread and start it
         cli = new ProxyCli();
-        if(shell == null) {
-            logger.debug("Creating new shell.");
-            shell = new Shell(name, System.out, System.in);
-        }
         shell.register(cli);
         logger.info("Starting the shell.");
         Future shellfuture = pool.submit(shell);
@@ -536,6 +458,7 @@ public class Proxy {
          */
         public ClientConnection(Socket clientSocket) {
             this.clientSocket = clientSocket;
+            clientSockets.add(clientSocket);
             logger = Logger.getLogger(ClientConnection.class);
         }
 
@@ -649,7 +572,6 @@ public class Proxy {
                 logger.info("Caught Exception: "); 
                 x.printStackTrace();
             } finally {
-                
                 try {
                     logger.debug("Closing socket.");
                     clientSocket.close();
@@ -931,11 +853,17 @@ public class Proxy {
                 serverSocket.close(); // throws io exc in ccl
             }            
  
+            for (Socket s : clientSockets) {
+                if (s != null) {
+                    logger.debug("closing client connection");
+                    s.close(); // throws io exc in client sockets
+                }
+            }
+
             // close System.in (blocking)
-            if(in == System.in)
-                System.in.close();
+            System.in.close();
  
-           // close shell 
+            // close shell 
             shell.close();
             
             logger.info("Shutting down.");

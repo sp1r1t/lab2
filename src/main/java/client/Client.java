@@ -1,61 +1,23 @@
 package client;
 
-import message.Response;
-import message.Request;
-import message.request.*;
-import message.response.*;
-
-import model.DownloadTicket;
-
-import java.util.LinkedHashSet;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Scanner;
-import java.util.regex.Pattern;
-import java.util.regex.Matcher;
-import java.util.Arrays;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.MissingResourceException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
-import java.util.concurrent.ExecutionException;
-import java.util.UUID;
-
-import java.io.IOException;
-import java.io.BufferedReader;
-import java.io.PrintWriter;
-import java.io.FileWriter;
-import java.io.FileReader;
-import java.io.BufferedWriter;
-import java.io.InputStreamReader;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.File;
-import java.io.FileNotFoundException;
-
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
-import java.nio.charset.Charset;
-import java.nio.ByteBuffer;
-
+import java.util.*;
+import java.util.regex.*;
+import java.util.concurrent.*;
+import java.io.*;
+import java.nio.*;
+import java.nio.file.*;
+import java.nio.charset.*;
 import java.net.*;
 
-import cli.Command;
-import cli.Shell;
+import cli.*;
+import util.*;
+import client.*;
+import message.*;
+import message.request.*;
+import message.response.*;
+import model.*;
 
-import util.Config;
-import util.FileServerConnection;
-
-import client.IClientCli;
-
-import org.apache.log4j.Logger;
-import org.apache.log4j.BasicConfigurator;
+import org.apache.log4j.*;
 
 /**
  * The Client
@@ -68,6 +30,14 @@ public class Client {
     private String name;
 
     private Logger logger;
+    {
+        // set up logger
+        logger = Logger.getLogger(Client.class);
+        BasicConfigurator.configure();
+        logger.debug("Logger is set up.");
+    }
+
+    private Config config;
 
     private String downloadDir;
 
@@ -91,8 +61,6 @@ public class Client {
 
     private UUID sid;
 
-    private InputStream sysin;
-
     /**
      * main function
      */
@@ -106,73 +74,37 @@ public class Client {
      * Constructor
      */
     public Client(String name) {
-        // set name
         this.name = name;
-
-        sysin = System.in;
-
-        // set up logger
-        logger = Logger.getLogger(Client.class);
-        BasicConfigurator.configure();
-        logger.debug("Logger is set up.");
-
-        // read config
-        String key = name;
-        try {
-            Config config = new Config(key);
-            key = "download.dir";
-            downloadDir = config.getString(key);
-            key = "proxy.host";
-            proxy = config.getString(key);
-            key = "proxy.tcp.port";
-            tcpPort = config.getInt(key);
-        } catch (MissingResourceException x) {
-            if(key == name) {
-                logger.fatal("Config " + key + 
-                             ".properties does not exist.");
-            } else {
-                logger.fatal("Key " + key + " is not defined.");
-            }
-            System.exit(1);
-        }
-
-        shell = null;
+        this.config = new Config(name);
+        this.shell = new Shell(name, System.out, System.in);
     }
 
     public Client(String name, Config config, Shell shell) {
-        // set name
         this.name = name;
-
-        sysin = null;
-
-        // set up logger
-        logger = Logger.getLogger(Client.class);
-        BasicConfigurator.configure();
-        logger.debug("Logger is set up.");
-
-        // read config
-        String key = name;
-        try {
-            key = "download.dir";
-            downloadDir = config.getString(key);
-            key = "proxy.host";
-            proxy = config.getString(key);
-            key = "proxy.tcp.port";
-            tcpPort = config.getInt(key);
-        } catch (MissingResourceException x) {
-            if(key == name) {
-                logger.fatal("Config " + key + 
-                             ".properties does not exist.");
-            } else {
-                logger.fatal("Key " + key + " is not defined.");
-            }
-            System.exit(1);
-        }
-
+        this.config = config;
         this.shell = shell;
     }
 
     public void run() {
+        // read config
+        String key = name;
+        try {
+            key = "download.dir";
+            downloadDir = config.getString(key);
+            key = "proxy.host";
+            proxy = config.getString(key);
+            key = "proxy.tcp.port";
+            tcpPort = config.getInt(key);
+        } catch (MissingResourceException x) {
+            if(key == name) {
+                logger.fatal("Config " + key + 
+                             ".properties does not exist.");
+            } else {
+                logger.fatal("Key " + key + " is not defined.");
+            }
+            System.exit(1);
+        }
+
         // set up thread pool
         pool = Executors.newFixedThreadPool(10);
 
@@ -200,9 +132,6 @@ public class Client {
 
         // set up shell
         cli = new ClientCli();
-        if(shell == null) {
-            shell = new Shell(name, System.out, System.in);
-        }
         shell.register(cli);
         logger.info("Starting the shell.");
         Future shellfuture = pool.submit(shell);
@@ -514,8 +443,7 @@ public class Client {
             shell.close();
 
             // close System.in
-            if( sysin == System.in)
-                System.in.close();
+            System.in.close();
 
             logger.info("Shutting down.");
             return new MessageResponse("Shutdown client.");
