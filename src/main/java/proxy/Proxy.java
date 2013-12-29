@@ -8,6 +8,9 @@ import java.nio.*;
 import java.nio.file.*;
 import java.nio.charset.*;
 import java.net.*;
+import java.security.*;
+import java.security.spec.*;
+import javax.crypto.*;
 
 import cli.*;
 import util.*;
@@ -20,6 +23,9 @@ import model.*;
 
 import org.apache.log4j.*;
 
+import org.bouncycastle.util.encoders.Base64;
+import org.bouncycastle.openssl.*;
+import org.bouncycastle.jce.provider.*;
 
 /**
  * The Proxy
@@ -39,7 +45,7 @@ public class Proxy {
     {
         // set up logger
         logger = Logger.getLogger("Proxy");
-        logger.setLevel(Level.ERROR);
+        logger.setLevel(Level.DEBUG);
         BasicConfigurator.configure();
         logger.debug("Logger is set up.");
     }
@@ -94,6 +100,9 @@ public class Proxy {
     // UDP port to listen for keepAlive packages
     private Integer udpPort;
 
+    // proxy private key
+    private PrivateKey privateKey;
+
     /**
      * main function
      */
@@ -128,6 +137,10 @@ public class Proxy {
      * Entry function for running the services
      */
     public void run() throws IOException {
+        // make bouncy caslte provider default
+        Provider prov = new org.bouncycastle.jce.provider.BouncyCastleProvider();
+        Security.insertProviderAt(prov, 1);
+
         // read proxy config
         String key = name;
         try {
@@ -161,6 +174,17 @@ public class Proxy {
 
         // read user config
         readUserConfig();
+
+        // read private key
+        try {
+            privateKey = readPrivateKey("proxy");
+        } catch (IOException ex) {
+            logger.fatal("Couldn't read proxys private key.");
+            logger.debug(ex.getMessage());
+            System.exit(1);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
 
         // create thread pool
         pool = Executors.newFixedThreadPool(30);
@@ -263,6 +287,72 @@ public class Proxy {
             return 1;
         }
         return 0;
+    }
+
+    private PrivateKey readPrivateKey(String name) throws IOException {
+        Charset charset = Charset.forName("UTF-8");
+        Path file = Paths.get("keys/" + name + ".pem");
+        BufferedReader reader = Files.newBufferedReader(file,charset);
+        PEMReader parser = new PEMReader(reader, new ProxyPasswordFinder());
+        Object o = parser.readObject();
+        //logger.debug(o.getClass()); 
+        if (o instanceof KeyPair) {
+            return ((KeyPair) o).getPrivate();
+        } else {
+            logger.error("Wrong key type");
+            return null;
+        }
+    }
+
+    class ProxyPasswordFinder implements PasswordFinder {
+        public char[] getPassword() {
+            return "12345".toCharArray(); 
+        }
+    }
+
+
+    /**
+     * Reads the key with the specified name from the keys directory. Type
+     * can be public or private and will define the filename extension. If
+     * type as another value just the name will be used.
+     */
+    private String readKey(String name, String type) throws IOException {
+        if (type.equals("private")) { 
+            type = ".pem";
+        }
+        else if (type.equals("public")) {
+            type = ".pub.pem";
+        }
+        else {
+            type = "";
+        }
+
+        Charset charset = Charset.forName("UTF-8");
+        Path file = Paths.get("keys/" + name + type);
+        BufferedReader reader = null;
+        String key = "";
+        reader = Files.newBufferedReader(file,charset);
+        while (reader.ready()) {
+            String line = reader.readLine();
+            if (line.matches(".*-.*")) {
+                continue;
+            }
+            key += line;
+        }
+        reader.close();
+        //logger.debug("keystring:\n" + key);
+        return key;
+    }
+
+    private PrivateKey convertKeyToPrivateKeyObject(String publicKey)
+        throws NoSuchAlgorithmException, 
+        InvalidKeySpecException, NoSuchProviderException {
+
+        byte[] key = Base64.decode(publicKey.getBytes());
+        PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(key);
+        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+
+        return keyFactory.generatePrivate(spec);
     }
 
     private FileServer getCurrentFileserver() {
@@ -542,6 +632,16 @@ public class Proxy {
                             response = logout();
                         } 
                     }
+                    // SECURE REQUEST
+                    else if (o instanceof SecureRequest) {
+                        logger.debug("Got a secure request...");
+                        SecureRequest request = (SecureRequest) o;
+                        handleSecureRequest(request.getBytes());
+                        if(response == null) {
+                            response = new MessageResponse("Got your secure " +
+                                                           "request.");
+                        }
+                    }
                     // TESTING REQUEST; cow says muh!!
                     else if (o instanceof String) {
                         if(user == null || user.getSid() == null) {
@@ -578,6 +678,54 @@ public class Proxy {
             } catch (IOException x) {
                 logger.info("Caught IOException.");
             }
+        }
+
+        public void handleSecureRequest(byte[] ciphertxt) {
+            // init cipher
+            try {
+                Cipher cipher = Cipher.getInstance(
+                    "RSA/NONE/OAEPWithSHA256AndMGF1Padding");
+                cipher.init(Cipher.DECRYPT_MODE, privateKey);
+
+                byte[] serialRequest = cipher.doFinal(ciphertxt);
+
+                ByteArrayInputStream bis = new ByteArrayInputStream(serialRequest);
+                ObjectInput in = null;
+                Object o = null;
+                try {
+                    in = new ObjectInputStream(bis);
+                    o = in.readObject();
+                } finally {
+                    try {
+                        bis.close();
+                    } catch (IOException ex) {
+                        // ignore close exception
+                    }
+                    try {
+                        if (in != null) {
+                            in.close();
+                        }
+                    } catch (IOException Exception ) {
+                        // ignore close exception
+                    }
+                }
+
+                if (o == null) {
+                    logger.debug("... and something went wrong."); 
+                    return;
+                }
+
+                if (o instanceof SecureLoginRequest) {
+                    logger.debug("... it's a secure login request.");
+                } else {
+                    logger.debug("... don't know the request."); 
+                }
+
+
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+
         }
 
         private User getUserBySid(UUID sid) {

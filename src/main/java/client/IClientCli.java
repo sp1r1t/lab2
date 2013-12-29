@@ -25,7 +25,7 @@ public interface IClientCli {
 	 * @return status whether the authentication was successful or not
 	 * @throws IOException if an I/O error occurs
 	 */
-	LoginResponse login(String username, String password) throws IOException;
+	LoginResponse pwlogin(String username, String password) throws IOException;
 
 	/**
 	 * Retrieves the current amount of credits of the authenticated user.

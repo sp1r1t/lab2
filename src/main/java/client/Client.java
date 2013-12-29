@@ -8,6 +8,9 @@ import java.nio.*;
 import java.nio.file.*;
 import java.nio.charset.*;
 import java.net.*;
+import java.security.*;
+import java.security.spec.*;
+import javax.crypto.*;
 
 import cli.*;
 import util.*;
@@ -18,6 +21,10 @@ import message.response.*;
 import model.*;
 
 import org.apache.log4j.*;
+
+import org.bouncycastle.util.encoders.Base64;
+import org.bouncycastle.openssl.*;
+import org.bouncycastle.jce.provider.*;
 
 /**
  * The Client
@@ -35,7 +42,7 @@ public class Client {
         // set up logger
         logger = Logger.getLogger("Client");
         BasicConfigurator.configure();
-        logger.setLevel(Level.ERROR);
+        logger.setLevel(Level.DEBUG);
         logger.debug("Logger is set up.");
     }
 
@@ -50,6 +57,15 @@ public class Client {
 
     // port for proxy connection
     private Integer tcpPort;
+
+    // proxy public key
+    private PublicKey proxyPubKey;
+    
+    // user private key
+    private PrivateKey privateKey;
+
+    // user public key
+    private PublicKey publicKey;
 
     // the shell
     private Shell shell;
@@ -72,6 +88,9 @@ public class Client {
 
     // session id
     private UUID sid;
+
+    // user pw
+    private String pw;
 
     /**
      * main function
@@ -98,6 +117,10 @@ public class Client {
     }
 
     public void run() {
+        // make bouncy caslte provider default
+        Provider prov = new org.bouncycastle.jce.provider.BouncyCastleProvider();
+        Security.insertProviderAt(prov, 1);
+
         // read config
         String key = name;
         try {
@@ -114,6 +137,25 @@ public class Client {
             } else {
                 logger.fatal("Key " + key + " is not defined.");
             }
+            System.exit(1);
+        }
+
+        // read proxy pub key
+/*        try {
+            String proxyPubKeyString = readKey("proxy", "public");
+            proxyPubKey = convertKeyToKeyObject(proxyPubKeyString);
+            logger.debug("key: " + proxyPubKey.getEncoded());
+        } catch (IOException ex) {
+            logger.fatal("Couldn't read proxys public key.");
+            System.exit(1);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+*/
+        try {
+            proxyPubKey = readPublicKey("proxy");
+        } catch (IOException  ex) {
+            logger.fatal("Couldn't read proxys public key.");
             System.exit(1);
         }
 
@@ -137,7 +179,7 @@ public class Client {
             logger.info("Shutting down client.");
             return;
         } catch(IOException x) {
-            logger.info("Coudln't connect to proxy.");
+            logger.info("Couldn't connect to proxy.");
             logger.info("Shutting down client.");
             return;
         } 
@@ -163,8 +205,89 @@ public class Client {
         logger.info("Closing main.");
     }
 
+    /**
+     * >> depricated!
+     * Reads the key with the specified name from the keys directory. Type
+     * can be public or private and will define the filename extension. If
+     * type as another value just the name will be used.
+     */
+    private PublicKey readKey(String name, String type) throws IOException {
+        if (type.equals("private")) { 
+            type = ".pem";
+        }
+        else if (type.equals("public")) {
+            type = ".pub.pem";
+        }
+        else {
+            type = "";
+        }
+
+        Charset charset = Charset.forName("UTF-8");
+        Path file = Paths.get("keys/" + name + type);
+        BufferedReader reader = null;
+        String key = "";
+        reader = Files.newBufferedReader(file,charset);
+        PEMReader parser = new PEMReader(reader);
+        Object o = parser.readObject();
+        logger.debug(o.getClass()); 
+        if (o instanceof JCERSAPublicKey) {
+            return (JCERSAPublicKey) o;
+        } else {
+            logger.error("Wrong key type");
+            return null;
+        }
+
+
+        /*while (reader.ready()) {
+            String line = reader.readLine();
+            if (line.matches(".*-.*")) {
+                continue;
+            }
+            key += line;
+        
+            reader.close();*/
+        //logger.debug("keystring:\n" + key);
+        //return key;
+    }
+
+    private PublicKey readPublicKey(String name) throws IOException {
+        Charset charset = Charset.forName("UTF-8");
+        Path file = Paths.get("keys/" + name + ".pub.pem");
+        BufferedReader reader = Files.newBufferedReader(file,charset);
+        PEMReader parser = new PEMReader(reader);
+        Object o = parser.readObject();
+        //logger.debug(o.getClass()); 
+        if (o instanceof JCERSAPublicKey) {
+            return (JCERSAPublicKey) o;
+        } else {
+            logger.error("Wrong key type");
+            return null;
+        }
+    }
+
+    private PrivateKey readPrivateKey(String name) throws IOException {
+        Charset charset = Charset.forName("UTF-8");
+        Path file = Paths.get("keys/" + name + ".pem");
+        BufferedReader reader = Files.newBufferedReader(file,charset);
+        PEMReader parser = new PEMReader(reader, new UserPassword());
+        Object o = parser.readObject();
+        //logger.debug(o.getClass()); 
+        if (o instanceof KeyPair) {
+            return ((KeyPair) o).getPrivate();
+        } else {
+            logger.error("Wrong key type");
+            return null;
+        }
+    }
+
     public IClientCli getCli() {
         return cli;
+    }
+
+    class UserPassword implements PasswordFinder {
+        public char[] getPassword() {
+            return pw.toCharArray(); 
+        }
     }
 
     class ClientCli implements IClientCli {
@@ -181,7 +304,94 @@ public class Client {
         }
  
         @Command
-        public LoginResponse login(String username, String password)
+        public Response login(String username, String password) throws IOException {
+            pw = password;
+            logger.debug("started pub/priv key login");
+            logger.debug("username is " + username);
+            
+            // read user keys
+            try {
+                publicKey = readPublicKey(username);
+            } catch (IOException  ex) {
+                logger.debug("Couldn't read user pub keys.");
+                logger.debug(ex.getMessage());
+                return new MessageResponse("Couldn't read the keys for this " +
+                                           "user.");
+            }
+            try {
+                privateKey = readPrivateKey(username);
+            } catch (IOException  ex) {
+                logger.debug("Couldn't read user priv keys.");
+                logger.debug(ex.getMessage());
+                return new MessageResponse("Couldn't read the keys for this " +
+                                           "user. Wrong Password?");
+            }
+
+
+            // create client challange
+            SecureRandom random = new SecureRandom();
+            logger.debug("algo: " + random.getAlgorithm()); 
+            logger.debug("prov: " + random.getProvider()); 
+            byte[] clientChallange = Base64.encode(random.getSeed(32));
+
+            SecureLoginRequest loginreq = 
+                new SecureLoginRequest(username,clientChallange);
+            
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            ObjectOutput out = null;
+            byte[] ciphertxt = {};
+            try {
+                // init cipher
+                Cipher cipher = Cipher.getInstance(
+                    "RSA/NONE/OAEPWithSHA256AndMGF1Padding");
+                cipher.init(Cipher.ENCRYPT_MODE, proxyPubKey);
+                logger.debug("cipher provider: " + cipher.getProvider()); 
+
+                // serialize request
+                out = new ObjectOutputStream(bos);   
+                out.writeObject(loginreq);
+                byte[] serialRequest = bos.toByteArray();
+
+                // create ciphertext
+                ciphertxt = cipher.doFinal(serialRequest);
+
+                // send request
+                SecureRequest req = new SecureRequest(ciphertxt);
+                oos.writeObject(req);
+                logger.debug("wrote to proxy");
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+            finally {
+                try {
+                    if (out != null) {
+                        out.close();
+                    }
+                } catch (IOException ex) {
+                    // ignore close exception
+                }
+                try {
+                    bos.close();
+                } catch (IOException ex) {
+                    // ignore close exception
+                }
+            }
+
+            Response resp = null;;
+            try {
+                Object o = ois.readObject();
+                resp = (Response) o;
+                logger.debug(o.toString());
+            } catch (ClassNotFoundException ex) {
+                ex.printStackTrace(); 
+            }
+                    
+
+            return resp;
+        }
+
+        @Command
+        public LoginResponse pwlogin(String username, String password)
             throws IOException {
             logger.debug("started login command");
             logger.debug("username is " + username);
