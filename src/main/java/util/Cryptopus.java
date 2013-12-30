@@ -1,9 +1,12 @@
 package util;
 
 import java.io.*;
-import java.security.PublicKey;
-import java.security.PrivateKey;
+import java.security.*;
 import javax.crypto.*;
+
+import message.*;
+import message.request.*;
+import message.response.*;
 
 public class Cryptopus {
     public static Object decryptObject(byte[] ciphertxt, PrivateKey key)
@@ -116,5 +119,58 @@ public class Cryptopus {
             }
         }            
         return bytes;
+    }
+
+    public static HmacRequest packHmac(Request req, Key hmacKey) {
+        byte[] objBytes = object2bytes(req);
+        byte[] hash = getHmac(hmacKey).doFinal(objBytes);
+        return new HmacRequest(req, hash);
+    }
+
+    public static Response packHmac(Response resp, Key hmacKey) {
+        byte[] objBytes = object2bytes(resp);
+        byte[] hash = getHmac(hmacKey).doFinal(objBytes);
+        return new HmacResponse(resp, hash);
+    }
+
+    public static Request unpackHmac(HmacRequest hreq, Key hmacKey) {
+        Request req = hreq.getRequest();
+        byte[] objBytes = object2bytes(req);
+        byte[] hash = getHmac(hmacKey).doFinal(objBytes);
+
+        if (MessageDigest.isEqual(hash, hreq.getHash())) {
+            System.out.println("Hash is good.");
+            return req;
+        }
+        else {
+            System.out.println("Hash is bad.");
+            return null;
+        }
+    }
+
+    public static Response unpackHmac(HmacResponse hresp, Key hmacKey) {
+        Response resp = hresp.getResponse();
+        byte[] objBytes = object2bytes(resp);
+        byte[] hash = getHmac(hmacKey).doFinal(objBytes);
+
+        if (MessageDigest.isEqual(hash, hresp.getHash())) {
+            System.out.println("Hash is good.");
+            return resp;
+        }
+        else {
+            System.out.println("Hash is bad.");
+            return null;
+        }
+    }
+
+    private static Mac getHmac(Key hmacKey) {
+        Mac hmac = null;
+        try {
+            hmac = Mac.getInstance("HmacSHA256", "BC");
+            hmac.init(hmacKey);
+        } catch (Exception ex) {
+            System.out.println("get hmac: " + ex.getMessage()); 
+        }
+        return hmac;
     }
 }

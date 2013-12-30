@@ -90,6 +90,9 @@ public class Proxy {
     // proxy private key
     private PrivateKey privateKey;
 
+    // hmac key
+    private Key hmacKey;
+
     //* everything below is read from the config file *//
 
     // time interval after which a fileserver is set offline
@@ -111,7 +114,7 @@ public class Proxy {
     private String privateKeyDir;
 
     // hmac dir for fs com
-    private String hMacDir;
+    private String hmacKeyDir;
 
     /**
      * main function
@@ -167,7 +170,7 @@ public class Proxy {
             key = "key";
             privateKeyDir = config.getString(key);
             key = "hmac.key";
-            hMacDir = config.getString(key);
+            hmacKeyDir = config.getString(key);
         }
         catch (MissingResourceException x) {
             if(key == name) {
@@ -201,6 +204,10 @@ public class Proxy {
         } catch (Exception ex) {
             ex.printStackTrace();
         }
+
+        // read hmac key
+        hmacKey = readKey(hmacKeyDir);
+        //logger.debug("hmackey: " + new String(hmacKey.getEncoded())); 
 
         // create thread pool
         pool = Executors.newFixedThreadPool(30);
@@ -303,6 +310,17 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             return 1;
         }
         return 0;
+    }
+
+    private Key readKey(String name) throws IOException {
+        Charset charset = Charset.forName("UTF-8");
+        Path file = Paths.get(name);
+        BufferedReader reader = Files.newBufferedReader(file,charset);
+        String strkey = "";
+        while (reader.ready()) {
+            strkey += reader.readLine();
+        }
+        return new SecretKeySpec(strkey.getBytes(), "HmacSHA256");
     }
 
     private PublicKey readPublicKey(String name) throws IOException {
@@ -971,7 +989,8 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             }
 
             FileServerConnection fscon = new 
-                FileServerConnection(fs.getHost(), fs.getTcpPort(), inforequest);
+                FileServerConnection(fs.getHost(), fs.getTcpPort(), inforequest,
+                                     hmacKey);
             Object o = fscon.call();
             if(o instanceof InfoResponse) {
                 InfoResponse response = (InfoResponse) o;
@@ -989,7 +1008,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             // get file version
             Request versionrequest = new VersionRequest(request.getFilename());
             fscon = new FileServerConnection(fs.getHost(), fs.getTcpPort(), 
-                                             versionrequest);
+                                             versionrequest, hmacKey);
             o = fscon.call();
             if(o instanceof VersionResponse) {
                 VersionResponse response = (VersionResponse) o;
@@ -1037,7 +1056,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             FileServerConnection fscon;
             for(FileServer f : fileservers) {
                 fscon = new FileServerConnection(f.getHost(), f.getTcpPort(),
-                                                 request);
+                                                 request, hmacKey);
                 Response response = fscon.call();
             }
 
@@ -1076,7 +1095,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                          fs.getHost() + ":" + fs.getTcpPort() + ".");
             Request request = new ListRequest(null);
             FileServerConnection fscon = new FileServerConnection
-                (fs.getHost(), fs.getTcpPort(), request);
+                (fs.getHost(), fs.getTcpPort(), request, hmacKey);
             
             Object o = fscon.call();
             if(o instanceof ListResponse) {

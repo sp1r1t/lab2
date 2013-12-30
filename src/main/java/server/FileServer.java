@@ -8,6 +8,9 @@ import java.nio.*;
 import java.nio.file.*;
 import java.nio.charset.*;
 import java.net.*;
+import java.security.*;
+import javax.crypto.*;
+import javax.crypto.spec.*;
 
 import cli.*;
 import util.*;
@@ -37,7 +40,7 @@ public class FileServer {
         // set up logger
         logger = Logger.getLogger("FileServer");
         BasicConfigurator.configure();
-        logger.setLevel(Level.INFO);
+        logger.setLevel(Level.DEBUG);
         logger.debug("Logger is set up.");
     }
 
@@ -56,6 +59,8 @@ public class FileServer {
     // version map
     private HashMap<String,Integer> version = new HashMap<String,Integer>();
 
+    // hmac key
+    private Key hmacKey;
 
     // everything below is read from the config file
 
@@ -78,7 +83,7 @@ public class FileServer {
     private int udpPort;
 
     // hmac dir for proxy com
-    private String hMacDir;
+    private String hmacKeyDir;
 
     /**
      * main function
@@ -116,6 +121,10 @@ public class FileServer {
      * Entry function for running the services
      */
     public void run() throws IOException {
+        // make bouncy caslte provider default
+        Provider prov = new org.bouncycastle.jce.provider.BouncyCastleProvider();
+        Security.insertProviderAt(prov, 1);
+
         // read config
         String key = name;
         try {
@@ -130,7 +139,7 @@ public class FileServer {
             key = "proxy.udp.port";
             udpPort = config.getInt(key);
             key = "hmac.key";
-            hMacDir = config.getString(key);
+            hmacKeyDir = config.getString(key);
         } catch (MissingResourceException x) {
             if(key == name) {
                 logger.fatal("Config " + key + 
@@ -140,6 +149,10 @@ public class FileServer {
             }
             System.exit(1);
         }
+
+        // read hmac key
+        hmacKey = readKey(hmacKeyDir);
+        //logger.debug("hmackey: " + new String(hmacKey.getEncoded())); 
         
         // set up file directory
         dir = new File(dirString);
@@ -191,6 +204,17 @@ public class FileServer {
             }*/
 
         //logger.info("Closing main");
+    }
+
+    private Key readKey(String name) throws IOException {
+        Charset charset = Charset.forName("UTF-8");
+        Path file = Paths.get(name);
+        BufferedReader reader = Files.newBufferedReader(file,charset);
+        String strkey = "";
+        while (reader.ready()) {
+            strkey += reader.readLine();
+        }
+        return new SecretKeySpec(strkey.getBytes(), "HmacSHA256");
     }
 
     public IFileServerCli getCli() {
@@ -409,6 +433,8 @@ public class FileServer {
          */
         public void run() {
             logger.info("Starting Connection.");
+            boolean hmacflag = false;
+
             try {
                 // create streams
                 ObjectInputStream ois = 
@@ -421,8 +447,17 @@ public class FileServer {
 
                 // recieve request
                 Object o = ois.readObject();
+
+                // unpack mac
+                if(o instanceof HmacRequest) {
+                    logger.debug("Got hmac request."); 
+                    HmacRequest hreq = (HmacRequest) o;
+                    o = Cryptopus.unpackHmac(hreq, hmacKey);
+                    hmacflag = true;
+                }
+
                 if(o instanceof ListRequest) {
-                    logger.debug("Got list requeest.");
+                    logger.debug("Got list request.");
 
                     // create file set
                     Set<String> fileset = new HashSet<String>();
@@ -539,6 +574,12 @@ public class FileServer {
                 }
                 else {
                     logger.debug("Got bad request.");
+                }
+
+                if (hmacflag) {
+                    logger.debug("Packing hmac response."); 
+                    response = Cryptopus.packHmac(response, hmacKey);
+                    hmacflag = false;
                 }
 
                 // send response back

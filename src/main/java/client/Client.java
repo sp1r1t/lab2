@@ -170,6 +170,8 @@ public class Client {
           ex.printStackTrace();
           }
 */
+
+        // setup proxy pub key
         try {
             proxyPubKey = readPublicKey(proxyPubKeyDir);
         } catch (IOException  ex) {
