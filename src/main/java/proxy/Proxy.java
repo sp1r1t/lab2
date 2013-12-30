@@ -11,6 +11,7 @@ import java.net.*;
 import java.security.*;
 import java.security.spec.*;
 import javax.crypto.*;
+import javax.crypto.spec.*;
 
 import cli.*;
 import util.*;
@@ -651,7 +652,8 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                     else if (o instanceof SecureRequest) {
                         logger.debug("Got a secure request...");
                         SecureRequest request = (SecureRequest) o;
-                        response = handleSecureRequest(request.getBytes());
+                        response = 
+                            handleSecureRequest(request.getBytes(), oos, ois);
                         if(response == null) {
                             response = new MessageResponse("Secure request " + 
                                                            "failed.");
@@ -695,7 +697,9 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             }
         }
 
-        public Response handleSecureRequest(byte[] ciphertxt) {
+        public Response handleSecureRequest(byte[] ciphertxt,
+                                            ObjectOutputStream oos, 
+                                            ObjectInputStream ois) {
             // init cipher
             try {
                 Cipher cipher = Cipher.getInstance(
@@ -742,21 +746,27 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                     byte[] clientChallange = req.getClientChallange();
 
                     SecureRandom random = new SecureRandom();
+
+                    // proxy challange
                     byte[] proxyChallange = new byte[32];
                     random.nextBytes(proxyChallange);
                     proxyChallange = Base64.encode(proxyChallange);
 
-                    byte[] secretKey = new byte[32];
-                    random.nextBytes(secretKey);
-                    secretKey = Base64.encode(secretKey);
+                    // secret aes key
+                    KeyGenerator kgen = KeyGenerator.getInstance("AES");
+                    kgen.init(256);
+                    SecretKey skey = kgen.generateKey();
+                    byte[] skeybytes = Base64.encode(skey.getEncoded());
+                    logger.debug("keysize: " + skeybytes.length); 
 
-                    byte[] ivParameter = new byte[16];
-                    random.nextBytes(ivParameter);
-                    ivParameter = Base64.encode(ivParameter);
+                    // initialization vector
+                    byte[] ivparam = new byte[16];
+                    random.nextBytes(ivparam);
+                    ivparam = Base64.encode(ivparam);
 
                     OkResponse okresp = new OkResponse(clientChallange, 
                                                      proxyChallange,
-                                                     secretKey, ivParameter);
+                                                     skeybytes, ivparam);
                     byte[] respCiphertxt;
                     logger.debug("Encrypting response.");
                     try {
@@ -766,10 +776,30 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                         return null;
                     }
 
-                    // static end request
                     SecureResponse resp = new SecureResponse(respCiphertxt);
                     logger.debug("Sending secure response back."); 
-                    return resp;
+                    oos.writeObject(resp);
+                    
+                    // create cipher
+                    Cipher aesCipher = Cipher.getInstance("AES");
+                    IvParameterSpec spec = new IvParameterSpec(ivparam);
+                    AlgorithmParameters param = 
+                        AlgorithmParameters.getInstance("AES");
+                    param.init(spec);
+                    aesCipher.init(Cipher.DECRYPT_MODE, skey, spec);
+
+                    // read proxy challange from client
+                    logger.debug("Waiting for challange response.");
+                    Object prxChObj = ois.readObject();
+                    if (prxChObj instanceof SecureResponse) {
+                        logger.debug("Got challange response."); 
+                        SecureResponse prxChResp = (SecureResponse) prxChObj;
+                        byte[] prxChCipher = prxChResp.getBytes();
+                    } else {
+                        logger.debug("That's not the expected class :/");
+                        logger.debug(prxChObj.getClass()); 
+                    }
+                    
                 } else {
                     logger.debug("... don't know the request."); 
                 }

@@ -11,6 +11,7 @@ import java.net.*;
 import java.security.*;
 import java.security.spec.*;
 import javax.crypto.*;
+import javax.crypto.spec.*;
 
 import cli.*;
 import util.*;
@@ -91,6 +92,9 @@ public class Client {
 
     // user pw
     private String pw;
+
+    // AES cipher
+    private Cipher aesCipher;
 
     /**
      * main function
@@ -368,12 +372,10 @@ public class Client {
                         out.close();
                     }
                 } catch (IOException ex) {
-                    // ignore close exception
                 }
                 try {
                     bos.close();
                 } catch (IOException ex) {
-                    // ignore close exception
                 }
             }
 
@@ -382,7 +384,69 @@ public class Client {
                 logger.debug("Waiting for response");
                 Object o = ois.readObject();
                 if (o instanceof SecureResponse) {
-                    logger.debug("Got secure response."); 
+                    SecureResponse secresp = (SecureResponse) o;
+                    logger.debug("Got secure response.");
+                    
+                    // decrypt response
+                    byte[] ciphertxt = secresp.getBytes();
+                    Object decrObj = null;
+                    try {
+                        decrObj = decryptObject(ciphertxt, privateKey);
+                    } catch (Exception ex) {
+                        logger.debug(ex.getMessage()); 
+                        return new MessageResponse("Error decrypting response.");
+                    }
+                    if (decrObj instanceof OkResponse) {
+                        OkResponse okresp = (OkResponse) decrObj;
+                        logger.debug("Got OK response."); 
+
+                        // create aes cipher
+                        try {
+                            aesCipher = Cipher.getInstance("AES/CTR/NoPadding");
+                            // iv
+                            byte[] ivparam = 
+                                Base64.decode(okresp.getIvParameter());
+                            IvParameterSpec spec = 
+                                new IvParameterSpec(ivparam);
+                            AlgorithmParameters param = 
+                                AlgorithmParameters.getInstance("AES");
+                            param.init(spec);
+
+                            // skey
+                            SecretKeySpec skey = new SecretKeySpec(
+                                Base64.decode(okresp.getSecretKey()), "AES");
+
+                            // cipher
+                            aesCipher.init(Cipher.ENCRYPT_MODE, skey, spec);
+
+                        } catch (Exception ex) {
+                            logger.debug(ex.getMessage());
+                            return new 
+                                MessageResponse("Can't get cipher.");
+                        }
+
+                        // encrypt proxy challange response
+                        byte[] proxyChallange = okresp.getProxyChallange();
+                        byte[] prxChCiph;
+                        try {
+                            prxChCiph = aesCipher.doFinal(proxyChallange);
+                        } catch (Exception ex) {
+                            logger.debug(ex.getMessage());
+                            return new MessageResponse(
+                                "Error in aes cipher.");
+                        }
+
+                        // send proxy challange response
+                        SecureResponse prxChResp = 
+                            new SecureResponse(prxChCiph);
+                        logger.debug("Sending proxy challange.");
+                        oos.writeObject(prxChResp);
+                        
+                        return new 
+                            MessageResponse("Authentication successfull.");
+                    } else {
+                        return new MessageResponse("Error in authentication.");
+                    }
                 } else {
                     logger.debug("Don't understand the response."); 
                 }
@@ -394,6 +458,37 @@ public class Client {
             return resp;
         }
 
+        private Object decryptObject(byte[] ciphertxt, PrivateKey key)
+            throws Exception {
+            Cipher cipher = Cipher.getInstance(
+                "RSA/NONE/OAEPWithSHA256AndMGF1Padding");
+            cipher.init(Cipher.DECRYPT_MODE, key);
+            
+            byte[] serialObj = cipher.doFinal(ciphertxt);
+            
+            ByteArrayInputStream bis = new ByteArrayInputStream(serialObj);
+            ObjectInput in = null;
+            Object o = null;
+            try {
+                in = new ObjectInputStream(bis);
+                o = in.readObject();
+            } finally {
+                try {
+                    bis.close();
+                } catch (IOException ex) {
+                    // ignore close exception
+                }
+                try {
+                    if (in != null) {
+                        in.close();
+                    }
+                } catch (IOException Exception ) {
+                    // ignore close exception
+                }
+            }
+            return o;
+        }
+        
         @Command
         public LoginResponse pwlogin(String username, String password)
             throws IOException {
