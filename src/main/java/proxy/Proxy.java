@@ -87,6 +87,9 @@ public class Proxy {
     // config
     private Config config;
 
+    // proxy private key
+    private PrivateKey privateKey;
+
     //* everything below is read from the config file *//
 
     // time interval after which a fileserver is set offline
@@ -101,8 +104,11 @@ public class Proxy {
     // UDP port to listen for keepAlive packages
     private Integer udpPort;
 
-    // proxy private key
-    private PrivateKey privateKey;
+    // user keys dir
+    private String keyDir;
+
+    // proxy priv key dir
+    private String privateKeyDir;
 
     /**
      * main function
@@ -153,6 +159,10 @@ public class Proxy {
             timeout = config.getInt(key);
             key = "fileserver.checkPeriod";
             checkPeriod = config.getInt(key);
+            key = "keys.dir";
+            keyDir = config.getString(key) + "/";
+            key = "key";
+            privateKeyDir = config.getString(key);
         }
         catch (MissingResourceException x) {
             if(key == name) {
@@ -178,7 +188,7 @@ public class Proxy {
 
         // read private key
         try {
-            privateKey = readPrivateKey("proxy");
+            privateKey = readPrivateKey(privateKeyDir);
         } catch (IOException ex) {
             logger.fatal("Couldn't read proxys private key.");
             logger.debug(ex.getMessage());
@@ -292,7 +302,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
 
     private PublicKey readPublicKey(String name) throws IOException {
         Charset charset = Charset.forName("UTF-8");
-        Path file = Paths.get("keys/" + name + ".pub.pem");
+        Path file = Paths.get(name);
         BufferedReader reader = Files.newBufferedReader(file,charset);
         PEMReader parser = new PEMReader(reader);
         Object o = parser.readObject();
@@ -307,7 +317,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
 
     private PrivateKey readPrivateKey(String name) throws IOException {
         Charset charset = Charset.forName("UTF-8");
-        Path file = Paths.get("keys/" + name + ".pem");
+        Path file = Paths.get(name);
         BufferedReader reader = Files.newBufferedReader(file,charset);
         PEMReader parser = new PEMReader(reader, new ProxyPasswordFinder());
         Object o = parser.readObject();
@@ -324,51 +334,6 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
         public char[] getPassword() {
             return "12345".toCharArray(); 
         }
-    }
-
-
-    /**
-     * Reads the key with the specified name from the keys directory. Type
-     * can be public or private and will define the filename extension. If
-     * type as another value just the name will be used.
-     */
-    private String readKey(String name, String type) throws IOException {
-        if (type.equals("private")) { 
-            type = ".pem";
-        }
-        else if (type.equals("public")) {
-            type = ".pub.pem";
-        }
-        else {
-            type = "";
-        }
-
-        Charset charset = Charset.forName("UTF-8");
-        Path file = Paths.get("keys/" + name + type);
-        BufferedReader reader = null;
-        String key = "";
-        reader = Files.newBufferedReader(file,charset);
-        while (reader.ready()) {
-            String line = reader.readLine();
-            if (line.matches(".*-.*")) {
-                continue;
-            }
-            key += line;
-        }
-        reader.close();
-        //logger.debug("keystring:\n" + key);
-        return key;
-    }
-
-    private PrivateKey convertKeyToPrivateKeyObject(String publicKey)
-        throws NoSuchAlgorithmException, 
-        InvalidKeySpecException, NoSuchProviderException {
-
-        byte[] key = Base64.decode(publicKey.getBytes());
-        PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(key);
-        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-
-        return keyFactory.generatePrivate(spec);
     }
 
     private FileServer getCurrentFileserver() {
@@ -590,12 +555,14 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                         try {
                             reqObj = 
                                 Cryptopus.decryptObject(reqCipher, privateKey);
+                            // forward decrypted request
                             o = reqObj;
                         } catch (Exception ex) {
                             logger.debug(ex.getMessage());
                             response = new MessageResponse("Request failed.");;
                         }
                     }
+
                     // LOGIN
                     if(o instanceof LoginRequest) {
                         logger.debug("Got login request.");
@@ -603,7 +570,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                         response = login(request);
                     }
                     // SECURE LOGIN
-                    if(o instanceof SecureLoginRequest) {
+                    else if(o instanceof SecureLoginRequest) {
                         logger.debug("Got secure login reqeust");
                         SecureLoginRequest request = (SecureLoginRequest) o;
                         response = secureLogin(request, oos, ois);
@@ -766,16 +733,16 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                                      ObjectInputStream ois) {
             Response failedResp = new MessageResponse("Could not log in.");
             SecureLoginRequest req = request;
-            //-- STAGE 1 --//            
+            //-- MESSAGE 1 --//            
             // implicit
 
-            //-- STAGE 2 --//
+            //-- MESSAGE 2 --//
 
             // get user pub key
             String username = req.getUsername();
             PublicKey userPubKey;
             try {
-                userPubKey = readPublicKey(username);
+                userPubKey = readPublicKey(keyDir + username + ".pub.pem");
             } catch (Exception ex) {
                 logger.debug(ex.getMessage());
                 return failedResp;
@@ -784,17 +751,17 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             // craft ok response
             logger.debug("Crafting response."); 
             
-            // client challange
-            /*byte[] clChB64 = req.getClientChallange();
+            // client challenge
+            /*byte[] clChB64 = req.getClientChallenge();
               byte[] clCh = Base64.decode(clChB64);*/
-            byte[] clCh = req.getClientChallange();
+            byte[] clCh = req.getClientChallenge();
             
             SecureRandom random = new SecureRandom();
             
-            // proxy challange
-            byte[] proxyChallange = new byte[32];
-            random.nextBytes(proxyChallange);
-            byte[] proxyChallangeB64 = Base64.encode(proxyChallange);
+            // proxy challenge
+            byte[] proxyChallenge = new byte[32];
+            random.nextBytes(proxyChallenge);
+            byte[] proxyChallengeB64 = Base64.encode(proxyChallenge);
             
             // secret aes key
             KeyGenerator kgen;
@@ -816,7 +783,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             
             // craft response
             OkResponse okresp = new OkResponse(clCh, 
-                                               proxyChallange,
+                                               proxyChallenge,
                                                skeybytes, ivparam);
             
             // encrypt response
@@ -842,7 +809,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                 return failedResp;
             }
             
-            //-- STAGE 3 --//
+            //-- MESSAGE 3 --//
 
             // create cipher
             Cipher aesCipher; 
@@ -857,8 +824,8 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             }
             
 
-            // read proxy challange response from client
-            logger.debug("Waiting for challange response.");
+            // read proxy challenge response from client
+            logger.debug("Waiting for challenge response.");
             Object prxChObj;
             try {
                 prxChObj = ois.readObject();
@@ -867,29 +834,29 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                 return failedResp;
             }
             if (prxChObj instanceof SecureResponse) {
-                logger.debug("Got challange response."); 
+                logger.debug("Got challenge response."); 
                 SecureResponse prxChResp = (SecureResponse) prxChObj;
                 
-                // decode proxy challange
+                // decode proxy challenge
                 /*byte[] prxChCipherB64 = prxChResp.getBytes();
                   byte[] prxChCipher = Base64.decode(prxChCipherB64);*/
                 byte[] prxChCipher = prxChResp.getBytes();
                 
-                // decrypt proxy challange
+                // decrypt proxy challenge
                 byte[] prxChPlain;
                 try {
                     prxChPlain = aesCipher.doFinal(prxChCipher);
                 } catch (Exception ex) {
                     logger.debug(ex.getMessage());
-                    logger.error("Couldn't decrypt proxy challange.");
+                    logger.error("Couldn't decrypt proxy challenge.");
                     return failedResp;
                 }
                 
-                // verify proxy challange
-                if(Arrays.equals(prxChPlain, proxyChallange)) {
-                    logger.debug("Proxy challange won.");
+                // verify proxy challenge
+                if(Arrays.equals(prxChPlain, proxyChallenge)) {
+                    logger.debug("Proxy challenge won.");
 
-                    //-- STAGE 4 --//
+                    //-- MESSAGE 4 --//
                     loginUser(username);
                     if (user != null) {
                         user.setSecretKey(skey);
@@ -900,7 +867,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                     
                 }
                 else {
-                    logger.debug("Proxy challange failed."); 
+                    logger.debug("Proxy challenge failed."); 
                 }
                 
             } else {

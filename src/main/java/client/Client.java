@@ -60,6 +60,12 @@ public class Client {
     // port for proxy connection
     private Integer tcpPort;
 
+    // key dir
+    private String keyDir;
+
+    // proxy pubblic key dir
+    private String proxyPubKeyDir;
+
     // proxy public key
     private PublicKey proxyPubKey;
     
@@ -95,8 +101,10 @@ public class Client {
     private String pw;
 
     // AES cipher
-    private Cipher aesCipher;
+    private Cipher aesCipher = null;
 
+    // communication channel
+    
     /**
      * main function
      */
@@ -135,6 +143,10 @@ public class Client {
             proxy = config.getString(key);
             key = "proxy.tcp.port";
             tcpPort = config.getInt(key);
+            key = "keys.dir";
+            keyDir = config.getString(key) + "/";
+            key = "proxy.key";
+            proxyPubKeyDir = config.getString(key);
         } catch (MissingResourceException x) {
             if(key == name) {
                 logger.fatal("Config " + key + 
@@ -158,7 +170,7 @@ public class Client {
           }
 */
         try {
-            proxyPubKey = readPublicKey("proxy");
+            proxyPubKey = readPublicKey(proxyPubKeyDir);
         } catch (IOException  ex) {
             logger.fatal("Couldn't read proxys public key.");
             System.exit(1);
@@ -210,54 +222,9 @@ public class Client {
         logger.info("Closing main.");
     }
 
-    /**
-     * >> depricated!
-     * Reads the key with the specified name from the keys directory. Type
-     * can be public or private and will define the filename extension. If
-     * type as another value just the name will be used.
-     */
-    private PublicKey readKey(String name, String type) throws IOException {
-        if (type.equals("private")) { 
-            type = ".pem";
-        }
-        else if (type.equals("public")) {
-            type = ".pub.pem";
-        }
-        else {
-            type = "";
-        }
-
-        Charset charset = Charset.forName("UTF-8");
-        Path file = Paths.get("keys/" + name + type);
-        BufferedReader reader = null;
-        String key = "";
-        reader = Files.newBufferedReader(file,charset);
-        PEMReader parser = new PEMReader(reader);
-        Object o = parser.readObject();
-        logger.debug(o.getClass()); 
-        if (o instanceof JCERSAPublicKey) {
-            return (JCERSAPublicKey) o;
-        } else {
-            logger.error("Wrong key type");
-            return null;
-        }
-
-
-        /*while (reader.ready()) {
-          String line = reader.readLine();
-          if (line.matches(".*-.*")) {
-          continue;
-          }
-          key += line;
-        
-          reader.close();*/
-        //logger.debug("keystring:\n" + key);
-        //return key;
-    }
-
     private PublicKey readPublicKey(String name) throws IOException {
         Charset charset = Charset.forName("UTF-8");
-        Path file = Paths.get("keys/" + name + ".pub.pem");
+        Path file = Paths.get(name);
         BufferedReader reader = Files.newBufferedReader(file,charset);
         PEMReader parser = new PEMReader(reader);
         Object o = parser.readObject();
@@ -272,7 +239,7 @@ public class Client {
 
     private PrivateKey readPrivateKey(String name) throws IOException {
         Charset charset = Charset.forName("UTF-8");
-        Path file = Paths.get("keys/" + name + ".pem");
+        Path file = Paths.get(name);
         BufferedReader reader = Files.newBufferedReader(file,charset);
         PEMReader parser = new PEMReader(reader, new UserPassword());
         Object o = parser.readObject();
@@ -316,47 +283,47 @@ public class Client {
             
             // read user keys
             try {
-                publicKey = readPublicKey(username);
-                privateKey = readPrivateKey(username);
+                publicKey = readPublicKey(keyDir + username + ".pub.pem");
+                privateKey = readPrivateKey(keyDir + username + ".pem");
             } catch (IOException  ex) {
                 logger.debug(ex.getMessage());
                 return new MessageResponse("Couldn't read the keys for this " +
                                            "user.");
             }
 
-            // create client challange
+            // create client challenge
             SecureRandom random = new SecureRandom();
             byte[] cliCh = new byte[32];
             random.nextBytes(cliCh);
             byte[] cliCh64 = Base64.encode(cliCh);
 
 
-            // stage1: login request, client challange
-            if(!loginStage1(username, cliCh))
+            // message 1: login request, client challenge
+            if(!loginMessage1(username, cliCh))
                 return new MessageResponse("An Error occured.");
 
-            // stage2: client challange response, proxy challange, aes params
-            OkResponse okresp = loginStage2(cliCh);
+            // message 2: client challenge response, proxy challenge, aes params
+            OkResponse okresp = loginMessage2(cliCh);
             if (okresp == null)
                 return new MessageResponse("An Error occured.");                
 
-            // stage3: proxy challange response
-            if(!loginStage3(okresp))
+            // message 3: proxy challenge response
+            if(!loginMessage3(okresp))
                 return new MessageResponse("An Error occured.");
 
-            // stage4: login
-            Response resp = loginStage4();
+            // message 4: login
+            Response resp = loginMessage4();
 
             return resp;
         }
 
         /**
-         * Stage1
-         * The client sends a login request with a challange (random bits to
+         * Message 1
+         * The client sends a login request with a challenge (random bits to
          * decrypt).
          * The message is encrypted with the proxys public key.
          */
-        private boolean loginStage1(String username, byte[] cliCh) {
+        private boolean loginMessage1(String username, byte[] cliCh) {
             SecureLoginRequest loginreq = 
                 new SecureLoginRequest(username, cliCh);
             
@@ -381,12 +348,12 @@ public class Client {
         }
 
         /**
-         * Stage2
-         * The client recieves the challange response from the proxy. Further
-         * he gets his own challange from the proxy and the parameters for
+         * Message2
+         * The client recieves the challenge response from the proxy. Further
+         * he gets his own challenge from the proxy and the parameters for
          * the aes cipher to be used in future communication.
          */
-        private OkResponse loginStage2(byte[] cliCh) {
+        private OkResponse loginMessage2(byte[] cliCh) {
             Response resp = null;
             logger.debug("Waiting for response");
             Object o;
@@ -415,15 +382,15 @@ public class Client {
                     return null;
                 }
                 if (decrObj instanceof OkResponse) {
-                    // verify challange
+                    // verify challenge
                     OkResponse okresp = (OkResponse) decrObj;
-                    byte[] cliChResp = okresp.getClientChallange();
+                    byte[] cliChResp = okresp.getClientChallenge();
                     if (Arrays.equals(cliCh, cliChResp)) {
-                        logger.debug("Client challange won."); 
+                        logger.debug("Client challenge won."); 
                         return okresp;
                     }
                     else {
-                        logger.debug("Client challange failed.");
+                        logger.debug("Client challenge failed.");
                     }
                 }
             }
@@ -431,9 +398,10 @@ public class Client {
         }
 
         /**
-         * The client sends the proxy challange back for verification.
+         * Message 3
+         * The client sends the proxy challenge back for verification.
          */
-        private boolean loginStage3(OkResponse okresp) {
+        private boolean loginMessage3(OkResponse okresp) {
             // create aes cipher
             try {
                 aesCipher = Cipher.getInstance("AES/CTR/NoPadding");
@@ -458,12 +426,12 @@ public class Client {
                 return false;
             }
 
-            // decode proxy challange
-            /*byte[] prxChB64 = okresp.getProxyChallange();
+            // decode proxy challenge
+            /*byte[] prxChB64 = okresp.getProxyChallenge();
               byte[] prxCh = Base64.decode(prxChB64);*/
-            byte[] prxCh = okresp.getProxyChallange();
+            byte[] prxCh = okresp.getProxyChallenge();
 
-            // encrypt proxy challange
+            // encrypt proxy challenge
             byte[] prxChCiph;
             try {
                 prxChCiph = aesCipher.doFinal(prxCh);
@@ -471,13 +439,13 @@ public class Client {
                 logger.debug(ex.getMessage());
                 return false;
             }
-            // encode proxy challange
+            // encode proxy challenge
             byte[] prxChCiphB64 = Base64.encode(prxChCiph);
 
-            // send proxy challange response (3rd msg)
+            // send proxy challenge response (3rd msg)
             SecureResponse prxChResp = 
                 new SecureResponse(prxChCiph);
-            logger.debug("Sending proxy challange.");
+            logger.debug("Sending proxy challenge.");
             try {
                 oos.writeObject(prxChResp);
             } catch (IOException ex) {
@@ -488,9 +456,10 @@ public class Client {
         }
 
         /**
+         * Message 4:
          * The client waits for a final login response.
          */
-        private Response loginStage4() {
+        private Response loginMessage4() {
             Object o;
             try {
                 o = ois.readObject();
@@ -778,6 +747,7 @@ public class Client {
             } catch (ClassNotFoundException x) {
                 logger.info("Class not found.");
             }
+            aesCipher = null;
             return resp;
         }
     
