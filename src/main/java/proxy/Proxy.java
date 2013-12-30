@@ -697,39 +697,14 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             }
         }
 
-        public Response handleSecureRequest(byte[] ciphertxt,
+        public Response handleSecureRequest(byte[] cipherObj,
                                             ObjectOutputStream oos, 
                                             ObjectInputStream ois) {
             Response failedResp = new MessageResponse("Request failes.");
             
             // init cipher
             try {
-                Cipher cipher = Cipher.getInstance(
-                    "RSA/NONE/OAEPWithSHA256AndMGF1Padding");
-                cipher.init(Cipher.DECRYPT_MODE, privateKey);
-
-                byte[] reqBytes = cipher.doFinal(ciphertxt);
-
-                ByteArrayInputStream bis = new ByteArrayInputStream(reqBytes);
-                ObjectInput in = null;
-                Object o = null;
-                try {
-                    in = new ObjectInputStream(bis);
-                    o = in.readObject();
-                } finally {
-                    try {
-                        bis.close();
-                    } catch (IOException ex) {
-                        // ignore close exception
-                    }
-                    try {
-                        if (in != null) {
-                            in.close();
-                        }
-                    } catch (IOException Exception ) {
-                        // ignore close exception
-                    }
-                }
+                Object o = Cryptopus.decryptObject(cipherObj, privateKey);
 
                 if (o == null) {
                     logger.debug("... and something went wrong."); 
@@ -780,7 +755,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                     byte[] respCipher;
                     logger.debug("Encrypting response.");
                     try {
-                        respCipher = encryptObject(okresp, userPubKey);   
+                        respCipher = Cryptopus.encryptObject(okresp, userPubKey);   
                     } catch (Exception ex) {
                         logger.debug(ex.getMessage()); 
                         return failedResp;
@@ -851,38 +826,6 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                 ex.printStackTrace();
             }
             return failedResp;
-        }
-
-        private byte[] encryptObject(Object o, PublicKey key) 
-            throws Exception {
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            ObjectOutput out = null;
-            try {
-                // init cipher
-                Cipher cipher = Cipher.getInstance(
-                    "RSA/NONE/OAEPWithSHA256AndMGF1Padding");
-                cipher.init(Cipher.ENCRYPT_MODE, key);
-                
-                // serialize request
-                out = new ObjectOutputStream(bos);   
-                out.writeObject(o);
-                byte[] serialObj = bos.toByteArray();
-
-                // return ciphertext
-                return cipher.doFinal(serialObj);
-            }
-            finally {
-                try {
-                    if (out != null) {
-                        out.close();
-                    }
-                } catch (IOException ex) {
-                }
-                try {
-                    bos.close();
-                } catch (IOException ex) {
-                }
-            }
         }
 
         private User getUserBySid(UUID sid) {

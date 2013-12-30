@@ -342,44 +342,19 @@ public class Client {
             SecureLoginRequest loginreq = 
                 new SecureLoginRequest(username,clientChallange);
             
-
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            ObjectOutput out = null;
             try {
-                // init cipher
-                Cipher cipher = Cipher.getInstance(
-                    "RSA/NONE/OAEPWithSHA256AndMGF1Padding");
-                cipher.init(Cipher.ENCRYPT_MODE, proxyPubKey);
-                logger.debug("cipher provider: " + cipher.getProvider()); 
-
-                // serialize request
-                out = new ObjectOutputStream(bos);   
-                out.writeObject(loginreq);
-                byte[] serialRequest = bos.toByteArray();
-
-                // encrypt request
-                byte[] loginReqCipher = cipher.doFinal(serialRequest);
-
-                // send request
-                SecureRequest req = new SecureRequest(loginReqCipher);
-                oos.writeObject(req);
-                logger.debug("wrote secure login request to proxy");
+                byte[] loginReqCipher = 
+                    Cryptopus.encryptObject(loginreq, proxyPubKey);
 
             } catch (Exception ex) {
                 ex.printStackTrace();
             }
-            finally {
-                try {
-                    if (out != null) {
-                        out.close();
-                    }
-                } catch (IOException ex) {
-                }
-                try {
-                    bos.close();
-                } catch (IOException ex) {
-                }
-            }
+
+            // send request
+            SecureRequest req = new SecureRequest(loginReqCipher);
+            oos.writeObject(req);
+            logger.debug("wrote secure login request to proxy");
+
 
             // get response (2nd msg)
             Response resp = null;
@@ -398,7 +373,8 @@ public class Client {
                     // decrypt response
                     Object decrObj = null;
                     try {
-                        decrObj = decryptObject(secRespCipher, privateKey);
+                        decrObj = 
+                            Cryptopus.decryptObject(secRespCipher, privateKey);
                     } catch (Exception ex) {
                         logger.debug(ex.getMessage()); 
                         return new MessageResponse("Error decrypting response.");
@@ -491,36 +467,6 @@ public class Client {
             return resp;
         }
 
-        private Object decryptObject(byte[] ciphertxt, PrivateKey key)
-            throws Exception {
-            Cipher cipher = Cipher.getInstance(
-                "RSA/NONE/OAEPWithSHA256AndMGF1Padding");
-            cipher.init(Cipher.DECRYPT_MODE, key);
-            
-            byte[] serialObj = cipher.doFinal(ciphertxt);
-            
-            ByteArrayInputStream bis = new ByteArrayInputStream(serialObj);
-            ObjectInput in = null;
-            Object o = null;
-            try {
-                in = new ObjectInputStream(bis);
-                o = in.readObject();
-            } finally {
-                try {
-                    bis.close();
-                } catch (IOException ex) {
-                    // ignore close exception
-                }
-                try {
-                    if (in != null) {
-                        in.close();
-                    }
-                } catch (IOException Exception ) {
-                    // ignore close exception
-                }
-            }
-            return o;
-        }
         
         @Command
         public LoginResponse pwlogin(String username, String password)
