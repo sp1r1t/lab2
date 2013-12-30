@@ -742,11 +742,18 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                     byte[] clientChallange = req.getClientChallange();
 
                     SecureRandom random = new SecureRandom();
-                    byte[] proxyChallange = Base64.encode(random.getSeed(32));
+                    byte[] proxyChallange = new byte[32];
+                    random.nextBytes(proxyChallange);
+                    proxyChallange = Base64.encode(proxyChallange);
 
-                    byte[] secretKey = Base64.encode(random.getSeed(32));
-                    byte[] ivParameter = Base64.encode(random.getSeed(16));
-                    
+                    byte[] secretKey = new byte[32];
+                    random.nextBytes(secretKey);
+                    secretKey = Base64.encode(secretKey);
+
+                    byte[] ivParameter = new byte[16];
+                    random.nextBytes(ivParameter);
+                    ivParameter = Base64.encode(ivParameter);
+
                     OkResponse okresp = new OkResponse(clientChallange, 
                                                      proxyChallange,
                                                      secretKey, ivParameter);

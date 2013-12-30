@@ -330,7 +330,9 @@ public class Client {
 
             // create client challange
             SecureRandom random = new SecureRandom();
-            byte[] clientChallange = Base64.encode(random.getSeed(32));
+            byte[] clientChallange = new byte[32];
+            random.nextBytes(clientChallange);
+            clientChallange = Base64.encode(clientChallange);
 
             SecureLoginRequest loginreq = 
                 new SecureLoginRequest(username,clientChallange);
