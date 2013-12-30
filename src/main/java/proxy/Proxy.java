@@ -581,11 +581,32 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                     // recieve request
                     Object o = ois.readObject();
                     
+                    // SECURE REQUEST
+                    if(o instanceof SecureRequest) {
+                        logger.debug("Got secure request.");
+                        SecureRequest request = (SecureRequest) o;
+                        byte[] reqCipher = request.getBytes();
+                        Object reqObj;
+                        try {
+                            reqObj = 
+                                Cryptopus.decryptObject(reqCipher, privateKey);
+                            o = reqObj;
+                        } catch (Exception ex) {
+                            logger.debug(ex.getMessage());
+                            response = new MessageResponse("Request failed.");;
+                        }
+                    }
                     // LOGIN
                     if(o instanceof LoginRequest) {
                         logger.debug("Got login request.");
                         LoginRequest request = (LoginRequest) o;
                         response = login(request);
+                    }
+                    // SECURE LOGIN
+                    if(o instanceof SecureLoginRequest) {
+                        logger.debug("Got secure login reqeust");
+                        SecureLoginRequest request = (SecureLoginRequest) o;
+                        response = secureLogin(request, oos, ois);
                     }
                     // CREDITS
                     else if (o instanceof CreditsRequest) {
@@ -648,17 +669,6 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                             response = logout();
                         } 
                     }
-                    // SECURE REQUEST
-                    else if (o instanceof SecureRequest) {
-                        logger.debug("Got a secure request...");
-                        SecureRequest request = (SecureRequest) o;
-                        response = 
-                            handleSecureRequest(request.getBytes(), oos, ois);
-                        if(response == null) {
-                            response = new MessageResponse("Secure request " + 
-                                                           "failed.");
-                        }
-                    }
                     // TESTING REQUEST; cow says muh!!
                     else if (o instanceof String) {
                         if(user == null || user.getSid() == null) {
@@ -702,129 +712,24 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                                             ObjectInputStream ois) {
             Response failedResp = new MessageResponse("Request failes.");
             
-            // init cipher
+            Object o;
             try {
-                Object o = Cryptopus.decryptObject(cipherObj, privateKey);
-
-                if (o == null) {
-                    logger.debug("... and something went wrong."); 
-                    return failedResp;
-                }
-
-                if (o instanceof SecureLoginRequest) {
-                    SecureLoginRequest req = (SecureLoginRequest) o;
-                    logger.debug("... it's a secure login request.");
-
-                    // get user pub key
-                    String username = req.getUsername();
-                    PublicKey userPubKey = readPublicKey(username);
-
-                    // craft ok response
-                    logger.debug("Crafting response."); 
-
-                    // client challange
-                    /*byte[] clChB64 = req.getClientChallange();
-                      byte[] clCh = Base64.decode(clChB64);*/
-                    byte[] clCh = req.getClientChallange();
-
-                    SecureRandom random = new SecureRandom();
-
-                    // proxy challange
-                    byte[] proxyChallange = new byte[32];
-                    random.nextBytes(proxyChallange);
-                    byte[] proxyChallangeB64 = Base64.encode(proxyChallange);
-
-                    // secret aes key
-                    KeyGenerator kgen = KeyGenerator.getInstance("AES");
-                    kgen.init(256);
-                    SecretKey skey = kgen.generateKey();
-                    byte[] skeybytes = skey.getEncoded();
-                    byte[] skeybytesB64 = Base64.encode(skeybytes);
-
-                    // initialization vector
-                    byte[] ivparam = new byte[16];
-                    random.nextBytes(ivparam);
-                    byte[] ivparamB64 = Base64.encode(ivparam);
-
-                    // craft response
-                    OkResponse okresp = new OkResponse(clCh, 
-                                                     proxyChallange,
-                                                     skeybytes, ivparam);
-
-                    // encrypt response
-                    byte[] respCipher;
-                    logger.debug("Encrypting response.");
-                    try {
-                        respCipher = Cryptopus.encryptObject(okresp, userPubKey);   
-                    } catch (Exception ex) {
-                        logger.debug(ex.getMessage()); 
-                        return failedResp;
-                    }
-                    
-                    // encode response
-                    byte[] respCipherB64 = Base64.encode(respCipher);
-
-                    // send response
-                    SecureResponse resp = new SecureResponse(respCipher);
-                    logger.debug("Sending secure response back."); 
-                    oos.writeObject(resp);
-                    
-                    // create cipher
-                    Cipher aesCipher = Cipher.getInstance("AES/CTR/NoPadding");
-                    IvParameterSpec spec = new IvParameterSpec(ivparam);
-                    aesCipher.init(Cipher.DECRYPT_MODE, skey, spec);
-
-                    // read proxy challange response from client
-                    logger.debug("Waiting for challange response.");
-                    Object prxChObj = ois.readObject();
-                    if (prxChObj instanceof SecureResponse) {
-                        logger.debug("Got challange response."); 
-                        SecureResponse prxChResp = (SecureResponse) prxChObj;
-
-                        // decode proxy challange
-                        /*byte[] prxChCipherB64 = prxChResp.getBytes();
-                          byte[] prxChCipher = Base64.decode(prxChCipherB64);*/
-                        byte[] prxChCipher = prxChResp.getBytes();
-
-                        // decrypt proxy challange
-                        byte[] prxChPlain;
-                        try {
-                            prxChPlain = aesCipher.doFinal(prxChCipher);
-                        } catch (Exception ex) {
-                            logger.debug(ex.getMessage());
-                            logger.error("Couldn't decrypt proxy challange.");
-                            return failedResp;
-                        }
-
-                        // verify proxy challange
-                        if(Arrays.equals(prxChPlain, proxyChallange)) {
-                            logger.debug("Proxy challange won.");
-                            loginUser(username);
-                            if (user != null) {
-                                user.setSecretKey(skey);
-                                user.setSpec(spec);
-                                return new LoginResponse(
-                                    LoginResponse.Type.SUCCESS, user.getSid());
-                            }
-
-                        }
-                        else {
-                            logger.debug("Proxy challange failed."); 
-                        }
-                        
-                    } else {
-                        logger.debug("That's not the expected class :/");
-                        logger.debug(prxChObj.getClass()); 
-                    }
-                    
-                } else {
-                    logger.debug("... don't know the request."); 
-                }
-
-
+                o = Cryptopus.decryptObject(cipherObj, privateKey);
             } catch (Exception ex) {
-                ex.printStackTrace();
+                logger.debug(ex.getMessage());
+                return failedResp;
             }
+
+            if (o == null) {
+                logger.debug("... and something went wrong."); 
+                return failedResp;
+            }
+
+            if (o instanceof SecureLoginRequest) {
+            } else {
+                logger.debug("... don't know the request."); 
+            }
+
             return failedResp;
         }
 
@@ -855,6 +760,156 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                 return false;
             }
         }                
+        
+        private Response secureLogin(SecureLoginRequest request,
+                                     ObjectOutputStream oos, 
+                                     ObjectInputStream ois) {
+            Response failedResp = new MessageResponse("Could not log in.");
+            SecureLoginRequest req = request;
+            //-- STAGE 1 --//            
+            // implicit
+
+            //-- STAGE 2 --//
+
+            // get user pub key
+            String username = req.getUsername();
+            PublicKey userPubKey;
+            try {
+                userPubKey = readPublicKey(username);
+            } catch (Exception ex) {
+                logger.debug(ex.getMessage());
+                return failedResp;
+            }
+            
+            // craft ok response
+            logger.debug("Crafting response."); 
+            
+            // client challange
+            /*byte[] clChB64 = req.getClientChallange();
+              byte[] clCh = Base64.decode(clChB64);*/
+            byte[] clCh = req.getClientChallange();
+            
+            SecureRandom random = new SecureRandom();
+            
+            // proxy challange
+            byte[] proxyChallange = new byte[32];
+            random.nextBytes(proxyChallange);
+            byte[] proxyChallangeB64 = Base64.encode(proxyChallange);
+            
+            // secret aes key
+            KeyGenerator kgen;
+            try {
+                kgen = KeyGenerator.getInstance("AES");
+            } catch (Exception ex) {
+                logger.debug(ex.getMessage());
+                return failedResp;
+            }
+            kgen.init(256);
+            SecretKey skey = kgen.generateKey();
+            byte[] skeybytes = skey.getEncoded();
+            byte[] skeybytesB64 = Base64.encode(skeybytes);
+            
+            // initialization vector
+            byte[] ivparam = new byte[16];
+            random.nextBytes(ivparam);
+            byte[] ivparamB64 = Base64.encode(ivparam);
+            
+            // craft response
+            OkResponse okresp = new OkResponse(clCh, 
+                                               proxyChallange,
+                                               skeybytes, ivparam);
+            
+            // encrypt response
+            byte[] respCipher;
+            logger.debug("Encrypting response.");
+            try {
+                respCipher = Cryptopus.encryptObject(okresp, userPubKey);   
+            } catch (Exception ex) {
+                logger.debug(ex.getMessage()); 
+                return failedResp;
+            }
+            
+            // encode response
+            byte[] respCipherB64 = Base64.encode(respCipher);
+            
+            // send response
+            SecureResponse resp = new SecureResponse(respCipher);
+            logger.debug("Sending secure response back."); 
+            try {
+                oos.writeObject(resp);
+            } catch (Exception ex) {
+                logger.debug(ex.getMessage());
+                return failedResp;
+            }
+            
+            //-- STAGE 3 --//
+
+            // create cipher
+            Cipher aesCipher; 
+            IvParameterSpec spec; 
+            try {
+                aesCipher = Cipher.getInstance("AES/CTR/NoPadding");
+                spec = new IvParameterSpec(ivparam);
+                aesCipher.init(Cipher.DECRYPT_MODE, skey, spec);
+            } catch (Exception ex) {
+                logger.debug(ex.getMessage());
+                return failedResp;
+            }
+            
+
+            // read proxy challange response from client
+            logger.debug("Waiting for challange response.");
+            Object prxChObj;
+            try {
+                prxChObj = ois.readObject();
+            } catch (Exception ex) {
+                logger.debug(ex.getMessage());
+                return failedResp;
+            }
+            if (prxChObj instanceof SecureResponse) {
+                logger.debug("Got challange response."); 
+                SecureResponse prxChResp = (SecureResponse) prxChObj;
+                
+                // decode proxy challange
+                /*byte[] prxChCipherB64 = prxChResp.getBytes();
+                  byte[] prxChCipher = Base64.decode(prxChCipherB64);*/
+                byte[] prxChCipher = prxChResp.getBytes();
+                
+                // decrypt proxy challange
+                byte[] prxChPlain;
+                try {
+                    prxChPlain = aesCipher.doFinal(prxChCipher);
+                } catch (Exception ex) {
+                    logger.debug(ex.getMessage());
+                    logger.error("Couldn't decrypt proxy challange.");
+                    return failedResp;
+                }
+                
+                // verify proxy challange
+                if(Arrays.equals(prxChPlain, proxyChallange)) {
+                    logger.debug("Proxy challange won.");
+
+                    //-- STAGE 4 --//
+                    loginUser(username);
+                    if (user != null) {
+                        user.setSecretKey(skey);
+                        user.setSpec(spec);
+                        return new LoginResponse(
+                            LoginResponse.Type.SUCCESS, user.getSid());
+                    }
+                    
+                }
+                else {
+                    logger.debug("Proxy challange failed."); 
+                }
+                
+            } else {
+                logger.debug("That's not the expected class :/");
+                logger.debug(prxChObj.getClass()); 
+            }
+            return failedResp;
+        }
+        
         
         private void loginUser(String username) {
             // try to log in

@@ -40,13 +40,13 @@ public class Client {
 
     // logger
     private Logger logger;
-    {
-        // set up logger
-        logger = Logger.getLogger("Client");
-        BasicConfigurator.configure();
-        logger.setLevel(Level.DEBUG);
-        logger.debug("Logger is set up.");
-    }
+        {
+            // set up logger
+            logger = Logger.getLogger("Client");
+            BasicConfigurator.configure();
+            logger.setLevel(Level.DEBUG);
+            logger.debug("Logger is set up.");
+        }
 
     // config
     private Config config;
@@ -147,15 +147,15 @@ public class Client {
 
         // read proxy pub key
 /*        try {
-            String proxyPubKeyString = readKey("proxy", "public");
-            proxyPubKey = convertKeyToKeyObject(proxyPubKeyString);
-            logger.debug("key: " + proxyPubKey.getEncoded());
-        } catch (IOException ex) {
-            logger.fatal("Couldn't read proxys public key.");
-            System.exit(1);
-        } catch (Exception ex) {
-            ex.printStackTrace();
-        }
+          String proxyPubKeyString = readKey("proxy", "public");
+          proxyPubKey = convertKeyToKeyObject(proxyPubKeyString);
+          logger.debug("key: " + proxyPubKey.getEncoded());
+          } catch (IOException ex) {
+          logger.fatal("Couldn't read proxys public key.");
+          System.exit(1);
+          } catch (Exception ex) {
+          ex.printStackTrace();
+          }
 */
         try {
             proxyPubKey = readPublicKey("proxy");
@@ -177,7 +177,7 @@ public class Client {
 
             out = new PrintWriter(proxySocket.getOutputStream(), true);
             in =  new BufferedReader(
-                    new InputStreamReader(proxySocket.getInputStream()));
+                new InputStreamReader(proxySocket.getInputStream()));
 
         } catch(UnknownHostException x) {
             logger.info("Host not known.");
@@ -200,12 +200,12 @@ public class Client {
         /*
         // for now join shell
         try {
-            shellfuture.get();
+        shellfuture.get();
         } catch (InterruptedException x) {
-            logger.info("Caught interrupt while waiting for shell.");
+        logger.info("Caught interrupt while waiting for shell.");
         } catch (ExecutionException x) {
-            logger.info("Caught ExecutionExcpetion while waiting for shell.");
-            } */
+        logger.info("Caught ExecutionExcpetion while waiting for shell.");
+        } */
 
         logger.info("Closing main.");
     }
@@ -244,13 +244,13 @@ public class Client {
 
 
         /*while (reader.ready()) {
-            String line = reader.readLine();
-            if (line.matches(".*-.*")) {
-                continue;
-            }
-            key += line;
+          String line = reader.readLine();
+          if (line.matches(".*-.*")) {
+          continue;
+          }
+          key += line;
         
-            reader.close();*/
+          reader.close();*/
         //logger.debug("keystring:\n" + key);
         //return key;
     }
@@ -317,158 +317,209 @@ public class Client {
             // read user keys
             try {
                 publicKey = readPublicKey(username);
+                privateKey = readPrivateKey(username);
             } catch (IOException  ex) {
-                logger.debug("Couldn't read user pub keys.");
                 logger.debug(ex.getMessage());
                 return new MessageResponse("Couldn't read the keys for this " +
                                            "user.");
             }
-            try {
-                privateKey = readPrivateKey(username);
-            } catch (IOException  ex) {
-                logger.debug("Couldn't read user priv keys.");
-                logger.debug(ex.getMessage());
-                return new MessageResponse("Couldn't read the keys for this " +
-                                           "user. Wrong Password?");
-            }
-
 
             // create client challange
             SecureRandom random = new SecureRandom();
-            byte[] clientChallange = new byte[32];
-            random.nextBytes(clientChallange);
-            byte[] clientChallangeB64 = Base64.encode(clientChallange);
+            byte[] cliCh = new byte[32];
+            random.nextBytes(cliCh);
+            byte[] cliCh64 = Base64.encode(cliCh);
 
-            SecureLoginRequest loginreq = 
-                new SecureLoginRequest(username,clientChallange);
-            
-            byte[] loginReqCipher;
-            try {
-                loginReqCipher = Cryptopus.encryptObject(loginreq, proxyPubKey);
 
-            } catch (Exception ex) {
-                logger.debug(ex.getMessage());
+            // stage1: login request, client challange
+            if(!loginStage1(username, cliCh))
                 return new MessageResponse("An Error occured.");
-            }
 
-            // send request
-            SecureRequest req = new SecureRequest(loginReqCipher);
-            oos.writeObject(req);
-            logger.debug("wrote secure login request to proxy");
+            // stage2: client challange response, proxy challange, aes params
+            OkResponse okresp = loginStage2(cliCh);
+            if (okresp == null)
+                return new MessageResponse("An Error occured.");                
 
+            // stage3: proxy challange response
+            if(!loginStage3(okresp))
+                return new MessageResponse("An Error occured.");
 
-            // get response (2nd msg)
-            Response resp = null;
-            try {
-                logger.debug("Waiting for response");
-                Object o = ois.readObject();
-                if (o instanceof SecureResponse) {
-                    SecureResponse secresp = (SecureResponse) o;
-                    logger.debug("Got secure response.");
-                    
-                    // decode response
-                    //byte[] secRespCipherB64 = secresp.getBytes();
-                    //byte[] secRespCipher = Base64.decode(secRespCipherB64);
-                    byte[] secRespCipher = secresp.getBytes();
-
-                    // decrypt response
-                    Object decrObj = null;
-                    try {
-                        decrObj = 
-                            Cryptopus.decryptObject(secRespCipher, privateKey);
-                    } catch (Exception ex) {
-                        logger.debug(ex.getMessage()); 
-                        return new MessageResponse("Error decrypting response.");
-                    }
-                    if (decrObj instanceof OkResponse) {
-                        OkResponse okresp = (OkResponse) decrObj;
-                        logger.debug("Got OK response."); 
-
-                        // create aes cipher
-                        try {
-                            aesCipher = Cipher.getInstance("AES/CTR/NoPadding");
-                            // iv
-                            /*byte[] ivparam = 
-                              Base64.decode(okresp.getIvParameter());*/
-                            byte[] ivparam = okresp.getIvParameter();
-                            IvParameterSpec spec = 
-                                new IvParameterSpec(ivparam);
-
-                            // skey
-                            /*SecretKeySpec skey = new SecretKeySpec(
-                                Base64.decode(okresp.getSecretKey()), "AES");*/
-                            SecretKeySpec skey = new SecretKeySpec(
-                                okresp.getSecretKey(), "AES");
-
-                            // init cipher
-                            aesCipher.init(Cipher.ENCRYPT_MODE, skey, spec);
-
-                        } catch (Exception ex) {
-                            logger.debug(ex.getMessage());
-                            return new 
-                                MessageResponse("Can't get cipher.");
-                        }
-
-                        // decode proxy challange
-                        /*byte[] prxChB64 = okresp.getProxyChallange();
-                          byte[] prxCh = Base64.decode(prxChB64);*/
-                        byte[] prxCh = okresp.getProxyChallange();
-
-                        // encrypt proxy challange
-                        byte[] prxChCiph;
-                        try {
-                            prxChCiph = aesCipher.doFinal(prxCh);
-                        } catch (Exception ex) {
-                            logger.debug(ex.getMessage());
-                            return new MessageResponse(
-                                "Error in aes cipher.");
-                        }
-                        // encode proxy challange
-                        byte[] prxChCiphB64 = Base64.encode(prxChCiph);
-
-                        // send proxy challange response
-                        SecureResponse prxChResp = 
-                            new SecureResponse(prxChCiph);
-                        logger.debug("Sending proxy challange.");
-                        oos.writeObject(prxChResp);
-                        
-                        o = ois.readObject();
-                        if(o instanceof LoginResponse) {
-                            LoginResponse lresp = (LoginResponse) o;
-                            logger.debug(lresp.getType());
-                            if(lresp.getType() == LoginResponse.Type.SUCCESS) {
-                                sid = lresp.getSid();
-                                logger.debug("Got sid " + sid);
-                            } else if (lresp.getType() == 
-                                       LoginResponse.Type.WRONG_CREDENTIALS) {
-                                logger.debug("Credentials are wrong.");
-                            } else if (lresp.getType() ==
-                                       LoginResponse.Type.IS_LOGGED_IN) {
-                                logger.debug("Already logged in.");
-                            }
-                            return lresp;
-                        }
-                        else {
-                            logger.error("Login response corrupted.");
-                        }
-                    } else {
-                        return new MessageResponse("Know that feel when you " +
-                                                   "open a christmas present " +
-                                                   "and can't identify what " +
-                                                   "it is?");
-                    }
-                } else if (o instanceof MessageResponse){
-                    resp = (MessageResponse) o;
-                }
-            } catch (ClassNotFoundException ex) {
-                ex.printStackTrace(); 
-            }
-                    
+            // stage4: login
+            Response resp = loginStage4();
 
             return resp;
         }
 
-        
+        /**
+         * Stage1
+         * The client sends a login request with a challange (random bits to
+         * decrypt).
+         * The message is encrypted with the proxys public key.
+         */
+        private boolean loginStage1(String username, byte[] cliCh) {
+            SecureLoginRequest loginreq = 
+                new SecureLoginRequest(username, cliCh);
+            
+            byte[] loginReqCipher;
+            try {
+                loginReqCipher = Cryptopus.encryptObject(loginreq, proxyPubKey);
+            } catch (Exception ex) {
+                logger.debug(ex.getMessage());
+                return false;
+            }
+
+            // send request (1st msg)
+            SecureRequest req = new SecureRequest(loginReqCipher);
+            try {
+                oos.writeObject(req);
+            } catch (IOException ex) {
+                logger.debug(ex.getMessage());
+                return false;
+            }
+            logger.debug("wrote secure login request to proxy");
+            return true;
+        }
+
+        /**
+         * Stage2
+         * The client recieves the challange response from the proxy. Further
+         * he gets his own challange from the proxy and the parameters for
+         * the aes cipher to be used in future communication.
+         */
+        private OkResponse loginStage2(byte[] cliCh) {
+            Response resp = null;
+            logger.debug("Waiting for response");
+            Object o;
+            try {
+                o = ois.readObject();
+            } catch (Exception ex) {
+                logger.debug(ex.getMessage());
+                return null;
+            }
+            if (o instanceof SecureResponse) {
+                SecureResponse secresp = (SecureResponse) o;
+                logger.debug("Got secure response.");
+                    
+                // decode response
+                //byte[] secRespCipherB64 = secresp.getBytes();
+                //byte[] secRespCipher = Base64.decode(secRespCipherB64);
+                byte[] secRespCipher = secresp.getBytes();
+
+                // decrypt response
+                Object decrObj = null;
+                try {
+                    decrObj = 
+                        Cryptopus.decryptObject(secRespCipher, privateKey);
+                } catch (Exception ex) {
+                    logger.debug(ex.getMessage()); 
+                    return null;
+                }
+                if (decrObj instanceof OkResponse) {
+                    // verify challange
+                    OkResponse okresp = (OkResponse) decrObj;
+                    byte[] cliChResp = okresp.getClientChallange();
+                    if (Arrays.equals(cliCh, cliChResp)) {
+                        logger.debug("Client challange won."); 
+                        return okresp;
+                    }
+                    else {
+                        logger.debug("Client challange failed.");
+                    }
+                }
+            }
+            return null;
+        }
+
+        /**
+         * The client sends the proxy challange back for verification.
+         */
+        private boolean loginStage3(OkResponse okresp) {
+            // create aes cipher
+            try {
+                aesCipher = Cipher.getInstance("AES/CTR/NoPadding");
+                // iv
+                /*byte[] ivparam = 
+                  Base64.decode(okresp.getIvParameter());*/
+                byte[] ivparam = okresp.getIvParameter();
+                IvParameterSpec spec = 
+                    new IvParameterSpec(ivparam);
+
+                // skey
+                /*SecretKeySpec skey = new SecretKeySpec(
+                  Base64.decode(okresp.getSecretKey()), "AES");*/
+                SecretKeySpec skey = new SecretKeySpec(
+                    okresp.getSecretKey(), "AES");
+
+                // init cipher
+                aesCipher.init(Cipher.ENCRYPT_MODE, skey, spec);
+
+            } catch (Exception ex) {
+                logger.debug(ex.getMessage());
+                return false;
+            }
+
+            // decode proxy challange
+            /*byte[] prxChB64 = okresp.getProxyChallange();
+              byte[] prxCh = Base64.decode(prxChB64);*/
+            byte[] prxCh = okresp.getProxyChallange();
+
+            // encrypt proxy challange
+            byte[] prxChCiph;
+            try {
+                prxChCiph = aesCipher.doFinal(prxCh);
+            } catch (Exception ex) {
+                logger.debug(ex.getMessage());
+                return false;
+            }
+            // encode proxy challange
+            byte[] prxChCiphB64 = Base64.encode(prxChCiph);
+
+            // send proxy challange response (3rd msg)
+            SecureResponse prxChResp = 
+                new SecureResponse(prxChCiph);
+            logger.debug("Sending proxy challange.");
+            try {
+                oos.writeObject(prxChResp);
+            } catch (IOException ex) {
+                logger.debug(ex.getMessage());
+                return false;
+            }
+            return true;
+        }
+
+        /**
+         * The client waits for a final login response.
+         */
+        private Response loginStage4() {
+            Object o;
+            try {
+                o = ois.readObject();
+            } catch (Exception ex) {
+                logger.debug(ex.getMessage());
+                return null;
+            }
+            if(o instanceof LoginResponse) {
+                LoginResponse lresp = (LoginResponse) o;
+                logger.debug(lresp.getType());
+                if(lresp.getType() == LoginResponse.Type.SUCCESS) {
+                    sid = lresp.getSid();
+                    logger.debug("Got sid " + sid);
+                } else if (lresp.getType() == 
+                           LoginResponse.Type.WRONG_CREDENTIALS) {
+                    logger.debug("Credentials are wrong.");
+                } else if (lresp.getType() ==
+                           LoginResponse.Type.IS_LOGGED_IN) {
+                    logger.debug("Already logged in.");
+                }
+                return lresp;
+            } 
+            else if (o instanceof MessageResponse) {
+                MessageResponse mresp = (MessageResponse) o;
+                return mresp;
+            }
+            return null;
+        }
+
         @Command
         public LoginResponse pwlogin(String username, String password)
             throws IOException {
@@ -586,7 +637,7 @@ public class Client {
                 }
             } catch (ClassNotFoundException x) {
                 logger.info("Class not found.");
-                }
+            }
             return resp;
         }
 
@@ -703,7 +754,7 @@ public class Client {
                 response = new MessageResponse("File does not exist.");
             } catch (IOException x) {
                 logger.debug("Couldn't read file.");
-                    x.printStackTrace();
+                x.printStackTrace();
             }
             
             return response;
@@ -726,7 +777,7 @@ public class Client {
                 }
             } catch (ClassNotFoundException x) {
                 logger.info("Class not found.");
-                }
+            }
             return resp;
         }
     
