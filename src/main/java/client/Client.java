@@ -22,6 +22,7 @@ import message.response.*;
 import model.*;
 
 import org.apache.log4j.*;
+//import org.apache.commons.codec.binary.Hex;
 
 import org.bouncycastle.util.encoders.Base64;
 import org.bouncycastle.openssl.*;
@@ -336,11 +337,12 @@ public class Client {
             SecureRandom random = new SecureRandom();
             byte[] clientChallange = new byte[32];
             random.nextBytes(clientChallange);
-            clientChallange = Base64.encode(clientChallange);
+            byte[] clientChallangeB64 = Base64.encode(clientChallange);
 
             SecureLoginRequest loginreq = 
                 new SecureLoginRequest(username,clientChallange);
             
+
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             ObjectOutput out = null;
             try {
@@ -355,11 +357,11 @@ public class Client {
                 out.writeObject(loginreq);
                 byte[] serialRequest = bos.toByteArray();
 
-                // create ciphertext
-                byte[] ciphertxt = cipher.doFinal(serialRequest);
+                // encrypt request
+                byte[] loginReqCipher = cipher.doFinal(serialRequest);
 
                 // send request
-                SecureRequest req = new SecureRequest(ciphertxt);
+                SecureRequest req = new SecureRequest(loginReqCipher);
                 oos.writeObject(req);
                 logger.debug("wrote secure login request to proxy");
 
@@ -379,6 +381,7 @@ public class Client {
                 }
             }
 
+            // get response (2nd msg)
             Response resp = null;
             try {
                 logger.debug("Waiting for response");
@@ -387,11 +390,15 @@ public class Client {
                     SecureResponse secresp = (SecureResponse) o;
                     logger.debug("Got secure response.");
                     
+                    // decode response
+                    //byte[] secRespCipherB64 = secresp.getBytes();
+                    //byte[] secRespCipher = Base64.decode(secRespCipherB64);
+                    byte[] secRespCipher = secresp.getBytes();
+
                     // decrypt response
-                    byte[] ciphertxt = secresp.getBytes();
                     Object decrObj = null;
                     try {
-                        decrObj = decryptObject(ciphertxt, privateKey);
+                        decrObj = decryptObject(secRespCipher, privateKey);
                     } catch (Exception ex) {
                         logger.debug(ex.getMessage()); 
                         return new MessageResponse("Error decrypting response.");
@@ -404,19 +411,19 @@ public class Client {
                         try {
                             aesCipher = Cipher.getInstance("AES/CTR/NoPadding");
                             // iv
-                            byte[] ivparam = 
-                                Base64.decode(okresp.getIvParameter());
+                            /*byte[] ivparam = 
+                              Base64.decode(okresp.getIvParameter());*/
+                            byte[] ivparam = okresp.getIvParameter();
                             IvParameterSpec spec = 
                                 new IvParameterSpec(ivparam);
-                            AlgorithmParameters param = 
-                                AlgorithmParameters.getInstance("AES");
-                            param.init(spec);
 
                             // skey
+                            /*SecretKeySpec skey = new SecretKeySpec(
+                                Base64.decode(okresp.getSecretKey()), "AES");*/
                             SecretKeySpec skey = new SecretKeySpec(
-                                Base64.decode(okresp.getSecretKey()), "AES");
+                                okresp.getSecretKey(), "AES");
 
-                            // cipher
+                            // init cipher
                             aesCipher.init(Cipher.ENCRYPT_MODE, skey, spec);
 
                         } catch (Exception ex) {
@@ -425,16 +432,22 @@ public class Client {
                                 MessageResponse("Can't get cipher.");
                         }
 
-                        // encrypt proxy challange response
-                        byte[] proxyChallange = okresp.getProxyChallange();
+                        // decode proxy challange
+                        /*byte[] prxChB64 = okresp.getProxyChallange();
+                          byte[] prxCh = Base64.decode(prxChB64);*/
+                        byte[] prxCh = okresp.getProxyChallange();
+
+                        // encrypt proxy challange
                         byte[] prxChCiph;
                         try {
-                            prxChCiph = aesCipher.doFinal(proxyChallange);
+                            prxChCiph = aesCipher.doFinal(prxCh);
                         } catch (Exception ex) {
                             logger.debug(ex.getMessage());
                             return new MessageResponse(
                                 "Error in aes cipher.");
                         }
+                        // encode proxy challange
+                        byte[] prxChCiphB64 = Base64.encode(prxChCiph);
 
                         // send proxy challange response
                         SecureResponse prxChResp = 
@@ -442,13 +455,33 @@ public class Client {
                         logger.debug("Sending proxy challange.");
                         oos.writeObject(prxChResp);
                         
-                        return new 
-                            MessageResponse("Authentication successfull.");
+                        o = ois.readObject();
+                        if(o instanceof LoginResponse) {
+                            LoginResponse lresp = (LoginResponse) o;
+                            logger.debug(lresp.getType());
+                            if(lresp.getType() == LoginResponse.Type.SUCCESS) {
+                                sid = lresp.getSid();
+                                logger.debug("Got sid " + sid);
+                            } else if (lresp.getType() == 
+                                       LoginResponse.Type.WRONG_CREDENTIALS) {
+                                logger.debug("Credentials are wrong.");
+                            } else if (lresp.getType() ==
+                                       LoginResponse.Type.IS_LOGGED_IN) {
+                                logger.debug("Already logged in.");
+                            }
+                            return lresp;
+                        }
+                        else {
+                            logger.error("Login response corrupted.");
+                        }
                     } else {
-                        return new MessageResponse("Error in authentication.");
+                        return new MessageResponse("Know that feel when you " +
+                                                   "open a christmas present " +
+                                                   "and can't identify what " +
+                                                   "it is?");
                     }
-                } else {
-                    logger.debug("Don't understand the response."); 
+                } else if (o instanceof MessageResponse){
+                    resp = (MessageResponse) o;
                 }
             } catch (ClassNotFoundException ex) {
                 ex.printStackTrace(); 

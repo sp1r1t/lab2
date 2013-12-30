@@ -2,6 +2,9 @@ package proxy;
 
 import java.util.UUID;
 
+import javax.crypto.SecretKey;
+import javax.crypto.spec.IvParameterSpec;
+
 import org.apache.log4j.Logger;
 import org.apache.log4j.BasicConfigurator;
 
@@ -13,7 +16,9 @@ class User {
     private long credits;
     private boolean loggedIn = false;
     private UUID sid;
-
+    private SecretKey skey;
+    private IvParameterSpec spec;
+    
     public User(String username, String password, long credits) {
         logger = Logger.getLogger(User.class);
         sid = null;
@@ -59,6 +64,23 @@ class User {
         this.sid = sid;
     }
 
+    SecretKey getSecretKey() {
+        return skey;
+    }
+    
+    void setSecretKey(SecretKey skey) {
+        this.skey = skey;
+    }
+
+    IvParameterSpec getSpec() {
+        return spec;
+    }
+    
+    void setSpec(IvParameterSpec spec) {
+        this.spec = spec;
+    }
+
+    
     boolean login() {
         if(loggedIn) {
             logger.warn("User " + username + " is already logged in.");
