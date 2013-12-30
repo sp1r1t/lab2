@@ -65,54 +65,20 @@ public class SecureChannel extends ChannelEnhancer {
             logger.error("Couldn't init cipher.");
         }
 
-        
-        ByteArrayInputStream bis = new ByteArrayInputStream(objPlain);
-        ObjectInput in = null;
-        try  {
-            in = new ObjectInputStream(bis);
-            o = in.readObject();
-        } finally {
-            try {
-                bis.close();
-            } catch (IOException  ex) {
-            }
-            try {
-                if (in != null) {
-                    in.close();
-                }
-            } catch (IOException ex) {
-            }
-        }
-        return o;
+        return Cryptopus.bytes2object(objPlain);
     }
 
     public void write(Object o) throws IOException {
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        ObjectOutput out = null;
+        byte[] objBytes = Cryptopus.object2bytes(o);
         byte[] objCipher = {};
         try {
             System.out.println("Encrypting object.");
             aesCipher.init(Cipher.ENCRYPT_MODE, skey, spec);
-
-            out = new ObjectOutputStream(bos);
-            out.writeObject(o);
-            byte[] serialObj = bos.toByteArray();
-            objCipher = aesCipher.doFinal(serialObj);
+            objCipher = aesCipher.doFinal(objBytes);
         } 
         catch (Exception ex) {
             //logger.debug(ex.getMessage());
-        }finally {
-            try {
-                bos.close();
-            } catch (IOException  ex) {
-            }
-            try {
-                if (out != null) {
-                    out.close();
-                }
-            } catch (IOException ex) {
-            }
-        }            
+        }
 
         Object msg;
         if (o instanceof Request) {

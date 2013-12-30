@@ -69,4 +69,52 @@ public class Cryptopus {
         }
     }
 
+    public static Object bytes2object(byte[] bytes) {
+        ByteArrayInputStream bis = new ByteArrayInputStream(bytes);
+        ObjectInput in = null;
+        Object o = null;;
+        try  {
+            in = new ObjectInputStream(bis);
+            o = in.readObject();
+        } catch (Exception ex) {
+            System.err.println(ex.getMessage());
+        }finally {
+            try {
+                bis.close();
+            } catch (IOException  ex) {
+            }
+            try {
+                if (in != null) {
+                    in.close();
+                }
+            } catch (IOException ex) {
+            }
+        }
+        return o;
+    }
+
+    public static byte[] object2bytes(Object o) {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        ObjectOutput out = null;
+        byte[] bytes = {};
+        try {
+            out = new ObjectOutputStream(bos);
+            out.writeObject(o);
+            bytes = bos.toByteArray();
+        } catch (Exception ex) {
+            System.out.println(ex.getMessage());
+        }finally {
+            try {
+                bos.close();
+            } catch (IOException  ex) {
+            }
+            try {
+                if (out != null) {
+                    out.close();
+                }
+            } catch (IOException ex) {
+            }
+        }            
+        return bytes;
+    }
 }
