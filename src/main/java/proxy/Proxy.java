@@ -574,7 +574,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                         }
                     }
 
-                    // LOGIN
+                    // PW LOGIN
                     if(o instanceof LoginRequest) {
                         logger.debug("Got login request.");
                         LoginRequest request = (LoginRequest) o;
@@ -721,6 +721,12 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
         }                
         
         private Response secureLogin(SecureLoginRequest request) {
+            // client is logged in with a user
+            if(user != null) {
+                return new LoginResponse(LoginResponse.Type.IS_LOGGED_IN);
+            } 
+
+
             Response failedResp = new MessageResponse("Could not log in.");
             SecureLoginRequest req = request;
             //-- MESSAGE 1 --//            
@@ -730,6 +736,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
 
             // get user pub key
             String username = req.getUsername();
+
             PublicKey userPubKey;
             try {
                 userPubKey = readPublicKey(keyDir + username + ".pub.pem");
