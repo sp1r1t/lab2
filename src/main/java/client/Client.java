@@ -609,6 +609,10 @@ public class Client {
 
         }
 
+        @Command Response ls() throws IOException {
+            return list();
+        }
+
         @Command
         public Response list() throws IOException {
             ListRequest req = new ListRequest(sid);
@@ -784,6 +788,11 @@ public class Client {
             logger.debug("Degrading to unencrypted channel."); 
             channel = channel.degrade();
             return resp;
+        }
+
+        @Command
+        public MessageResponse e() throws IOException {
+            return exit();
         }
     
         @Command
