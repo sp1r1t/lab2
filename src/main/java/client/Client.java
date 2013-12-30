@@ -342,12 +342,13 @@ public class Client {
             SecureLoginRequest loginreq = 
                 new SecureLoginRequest(username,clientChallange);
             
+            byte[] loginReqCipher;
             try {
-                byte[] loginReqCipher = 
-                    Cryptopus.encryptObject(loginreq, proxyPubKey);
+                loginReqCipher = Cryptopus.encryptObject(loginreq, proxyPubKey);
 
             } catch (Exception ex) {
-                ex.printStackTrace();
+                logger.debug(ex.getMessage());
+                return new MessageResponse("An Error occured.");
             }
 
             // send request
