@@ -387,7 +387,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
          * Constructor
          */
         public KeepAliveListener(){
-            logger = Logger.getLogger("Proxy.KeepAliveListener");
+            //logger = Logger.getLogger("Proxy.KeepAliveListener");
         }
 
         /**
@@ -460,11 +460,11 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
     }
 
     private class ClientConnectionListener implements Runnable {
-        Logger logger;
+        //Logger logger;
         ServerSocket serverSocket;
 
         public ClientConnectionListener() {
-            logger = Logger.getLogger("Proxy.ClientConnectionListener");
+            //logger = Logger.getLogger("Proxy.ClientConnectionListener");
         }
 
         /**
@@ -514,8 +514,9 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
          * member variables
          */
         private Socket clientSocket;
-        private Logger logger;
+        //private Logger logger;
         private User user;
+        private Channel channel;
 
         /** 
          * Constructor
@@ -523,7 +524,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
         public ClientConnection(Socket clientSocket) {
             this.clientSocket = clientSocket;
             clientSockets.add(clientSocket);
-            logger = Logger.getLogger("Proxy.ClientConnection");
+            //logger = Logger.getLogger("Proxy.ClientConnection");
         }
 
         /**
@@ -538,13 +539,14 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                 ObjectOutputStream oos = 
                     new ObjectOutputStream(clientSocket.getOutputStream());
 
-                
+                channel = new TCPChannel(ois, oos);
                 Response response = null;
 
                 // listen for requests
                 while(!Thread.interrupted()) {
                     // recieve request
-                    Object o = ois.readObject();
+                    //Object o = ois.readObject();
+                    Object o = channel.read();
                     
                     // SECURE REQUEST
                     if(o instanceof SecureRequest) {
@@ -573,7 +575,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                     else if(o instanceof SecureLoginRequest) {
                         logger.debug("Got secure login reqeust");
                         SecureLoginRequest request = (SecureLoginRequest) o;
-                        response = secureLogin(request, oos, ois);
+                        response = secureLogin(request);
                     }
                     // CREDITS
                     else if (o instanceof CreditsRequest) {
@@ -647,10 +649,17 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                     
                     // send response back
                     if(response != null) {
-                        oos.writeObject(response);
+                        //oos.writeObject(response);
+                        channel.write(response);
+                        if (o instanceof LogoutRequest) {
+                            // revert to unencrypted channel
+                            logger.debug("Degrading to unencrypted channel."); 
+                            channel = channel.degrade();
+                        }
                     } else {
                         String msg = "Dwarfes attacked us, we were defenseless!";
-                        oos.writeObject(new MessageResponse(msg));
+                        //oos.writeObject(new MessageResponse(msg));
+                        channel.write(new MessageResponse(msg));
                     }
                 }
             } catch (IOException x) {
@@ -672,32 +681,6 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             } catch (IOException x) {
                 logger.info("Caught IOException.");
             }
-        }
-
-        public Response handleSecureRequest(byte[] cipherObj,
-                                            ObjectOutputStream oos, 
-                                            ObjectInputStream ois) {
-            Response failedResp = new MessageResponse("Request failes.");
-            
-            Object o;
-            try {
-                o = Cryptopus.decryptObject(cipherObj, privateKey);
-            } catch (Exception ex) {
-                logger.debug(ex.getMessage());
-                return failedResp;
-            }
-
-            if (o == null) {
-                logger.debug("... and something went wrong."); 
-                return failedResp;
-            }
-
-            if (o instanceof SecureLoginRequest) {
-            } else {
-                logger.debug("... don't know the request."); 
-            }
-
-            return failedResp;
         }
 
         private User getUserBySid(UUID sid) {
@@ -728,9 +711,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             }
         }                
         
-        private Response secureLogin(SecureLoginRequest request,
-                                     ObjectOutputStream oos, 
-                                     ObjectInputStream ois) {
+        private Response secureLogin(SecureLoginRequest request) {
             Response failedResp = new MessageResponse("Could not log in.");
             SecureLoginRequest req = request;
             //-- MESSAGE 1 --//            
@@ -803,7 +784,8 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             SecureResponse resp = new SecureResponse(respCipher);
             logger.debug("Sending secure response back."); 
             try {
-                oos.writeObject(resp);
+                //oos.writeObject(resp);
+                channel.write(resp);
             } catch (Exception ex) {
                 logger.debug(ex.getMessage());
                 return failedResp;
@@ -823,12 +805,12 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                 return failedResp;
             }
             
-
             // read proxy challenge response from client
             logger.debug("Waiting for challenge response.");
             Object prxChObj;
             try {
-                prxChObj = ois.readObject();
+                //prxChObj = ois.readObject();
+                prxChObj = channel.read();
             } catch (Exception ex) {
                 logger.debug(ex.getMessage());
                 return failedResp;
@@ -855,6 +837,10 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                 // verify proxy challenge
                 if(Arrays.equals(prxChPlain, proxyChallenge)) {
                     logger.debug("Proxy challenge won.");
+
+                    // switch to secure channel
+                    logger.debug("Switching to secure channel."); 
+                    channel = new SecureChannel(channel, skey, spec);
 
                     //-- MESSAGE 4 --//
                     loginUser(username);

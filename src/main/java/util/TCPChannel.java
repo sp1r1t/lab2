@@ -20,4 +20,8 @@ public class TCPChannel implements Channel {
         oos.writeObject(o);
     }
 
+    public Channel degrade() {
+        return this;
+    }
+
 }

@@ -407,6 +407,7 @@ public class Client {
          * The client sends the proxy challenge back for verification.
          */
         private boolean loginMessage3(OkResponse okresp) {
+            Channel secchannel;
             // create aes cipher
             try {
                 aesCipher = Cipher.getInstance("AES/CTR/NoPadding");
@@ -426,6 +427,8 @@ public class Client {
                 // init cipher
                 aesCipher.init(Cipher.ENCRYPT_MODE, skey, spec);
 
+                // create secure channel
+                secchannel = new SecureChannel(channel, skey, spec);
             } catch (Exception ex) {
                 logger.debug(ex.getMessage());
                 return false;
@@ -448,8 +451,9 @@ public class Client {
             byte[] prxChCiphB64 = Base64.encode(prxChCiph);
 
             // send proxy challenge response (3rd msg)
+            //MessageResponse prxChResp = new MessageResponse(prChCiphB64);
             SecureResponse prxChResp = 
-                new SecureResponse(prxChCiph);
+              new SecureResponse(prxChCiph);
             logger.debug("Sending proxy challenge.");
             try {
                 //oos.writeObject(prxChResp);
@@ -458,6 +462,10 @@ public class Client {
                 logger.debug(ex.getMessage());
                 return false;
             }
+
+            // set secure channel
+            logger.debug("Switching to secure channel."); 
+            channel = secchannel;
             return true;
         }
 
@@ -768,7 +776,11 @@ public class Client {
             } catch (ClassNotFoundException x) {
                 logger.info("Class not found.");
             }
+
+            // revert to unencrypted channel
             aesCipher = null;
+            logger.debug("Degrading to unencrypted channel."); 
+            channel = channel.degrade();
             return resp;
         }
     
