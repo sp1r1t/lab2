@@ -42,13 +42,13 @@ public class Proxy {
 
     // logger
     private static Logger logger;
-    {
-        // set up logger
-        logger = Logger.getLogger("Proxy");
-        logger.setLevel(Level.DEBUG);
-        BasicConfigurator.configure();
-        logger.debug("Logger is set up.");
-    }
+        {
+            // set up logger
+            logger = Logger.getLogger("Proxy");
+            logger.setLevel(Level.DEBUG);
+            BasicConfigurator.configure();
+            logger.debug("Logger is set up.");
+        }
 
     // a list of all users
     private ArrayList<User> users;
@@ -213,14 +213,14 @@ public class Proxy {
 
         System.out.println("Proxy started."); 
 /*
-        // for now join shell
-        try {
-            shellfuture.get();
-        } catch (InterruptedException x) {
-            logger.info("Caught interrupt while waiting for shell.");
-        } catch (ExecutionException x) {
-            logger.info("Caught ExecutionExcpetion while waiting for shell.");
-        }
+// for now join shell
+try {
+shellfuture.get();
+} catch (InterruptedException x) {
+logger.info("Caught interrupt while waiting for shell.");
+} catch (ExecutionException x) {
+logger.info("Caught ExecutionExcpetion while waiting for shell.");
+}
 */
         
         logger.info("Closing main");
@@ -282,11 +282,26 @@ public class Proxy {
         }
         catch (Exception x) {
             logger.error("Your user config " +
-                               "is corrupted. Make sure you have " +
-                               "supplied all necessary variables.");
+                         "is corrupted. Make sure you have " +
+                         "supplied all necessary variables.");
             return 1;
         }
         return 0;
+    }
+
+    private PublicKey readPublicKey(String name) throws IOException {
+        Charset charset = Charset.forName("UTF-8");
+        Path file = Paths.get("keys/" + name + ".pub.pem");
+        BufferedReader reader = Files.newBufferedReader(file,charset);
+        PEMReader parser = new PEMReader(reader);
+        Object o = parser.readObject();
+        //logger.debug(o.getClass()); 
+        if (o instanceof JCERSAPublicKey) {
+            return (JCERSAPublicKey) o;
+        } else {
+            logger.error("Wrong key type");
+            return null;
+        }
     }
 
     private PrivateKey readPrivateKey(String name) throws IOException {
@@ -636,10 +651,10 @@ public class Proxy {
                     else if (o instanceof SecureRequest) {
                         logger.debug("Got a secure request...");
                         SecureRequest request = (SecureRequest) o;
-                        handleSecureRequest(request.getBytes());
+                        response = handleSecureRequest(request.getBytes());
                         if(response == null) {
-                            response = new MessageResponse("Got your secure " +
-                                                           "request.");
+                            response = new MessageResponse("Secure request " + 
+                                                           "failed.");
                         }
                     }
                     // TESTING REQUEST; cow says muh!!
@@ -680,7 +695,7 @@ public class Proxy {
             }
         }
 
-        public void handleSecureRequest(byte[] ciphertxt) {
+        public Response handleSecureRequest(byte[] ciphertxt) {
             // init cipher
             try {
                 Cipher cipher = Cipher.getInstance(
@@ -712,11 +727,42 @@ public class Proxy {
 
                 if (o == null) {
                     logger.debug("... and something went wrong."); 
-                    return;
+                    return null;
                 }
 
                 if (o instanceof SecureLoginRequest) {
+                    SecureLoginRequest req = (SecureLoginRequest) o;
                     logger.debug("... it's a secure login request.");
+                    // get user pub key
+                    String username = req.getUsername();
+                    PublicKey userPubKey = readPublicKey(username);
+
+                    // craft ok response
+                    logger.debug("Crafting response."); 
+                    byte[] clientChallange = req.getClientChallange();
+
+                    SecureRandom random = new SecureRandom();
+                    byte[] proxyChallange = Base64.encode(random.getSeed(32));
+
+                    byte[] secretKey = Base64.encode(random.getSeed(32));
+                    byte[] ivParameter = Base64.encode(random.getSeed(16));
+                    
+                    OkResponse okresp = new OkResponse(clientChallange, 
+                                                     proxyChallange,
+                                                     secretKey, ivParameter);
+                    byte[] respCiphertxt;
+                    logger.debug("Encrypting response.");
+                    try {
+                        respCiphertxt = encryptObject(okresp, userPubKey);   
+                    } catch (Exception ex) {
+                        logger.debug(ex.getMessage()); 
+                        return null;
+                    }
+
+                    // static end request
+                    SecureResponse resp = new SecureResponse(respCiphertxt);
+                    logger.debug("Sending secure response back."); 
+                    return resp;
                 } else {
                     logger.debug("... don't know the request."); 
                 }
@@ -725,7 +771,39 @@ public class Proxy {
             } catch (Exception ex) {
                 ex.printStackTrace();
             }
+            return null;
+        }
 
+        private byte[] encryptObject(Object o, PublicKey key) 
+            throws Exception {
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            ObjectOutput out = null;
+            try {
+                // init cipher
+                Cipher cipher = Cipher.getInstance(
+                    "RSA/NONE/OAEPWithSHA256AndMGF1Padding");
+                cipher.init(Cipher.ENCRYPT_MODE, key);
+                
+                // serialize request
+                out = new ObjectOutputStream(bos);   
+                out.writeObject(o);
+                byte[] serialObj = bos.toByteArray();
+
+                // return ciphertext
+                return cipher.doFinal(serialObj);
+            }
+            finally {
+                try {
+                    if (out != null) {
+                        out.close();
+                    }
+                } catch (IOException ex) {
+                }
+                try {
+                    bos.close();
+                } catch (IOException ex) {
+                }
+            }
         }
 
         private User getUserBySid(UUID sid) {

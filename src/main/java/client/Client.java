@@ -330,8 +330,6 @@ public class Client {
 
             // create client challange
             SecureRandom random = new SecureRandom();
-            logger.debug("algo: " + random.getAlgorithm()); 
-            logger.debug("prov: " + random.getProvider()); 
             byte[] clientChallange = Base64.encode(random.getSeed(32));
 
             SecureLoginRequest loginreq = 
@@ -339,7 +337,6 @@ public class Client {
             
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             ObjectOutput out = null;
-            byte[] ciphertxt = {};
             try {
                 // init cipher
                 Cipher cipher = Cipher.getInstance(
@@ -353,12 +350,13 @@ public class Client {
                 byte[] serialRequest = bos.toByteArray();
 
                 // create ciphertext
-                ciphertxt = cipher.doFinal(serialRequest);
+                byte[] ciphertxt = cipher.doFinal(serialRequest);
 
                 // send request
                 SecureRequest req = new SecureRequest(ciphertxt);
                 oos.writeObject(req);
-                logger.debug("wrote to proxy");
+                logger.debug("wrote secure login request to proxy");
+
             } catch (Exception ex) {
                 ex.printStackTrace();
             }
@@ -377,11 +375,15 @@ public class Client {
                 }
             }
 
-            Response resp = null;;
+            Response resp = null;
             try {
+                logger.debug("Waiting for response");
                 Object o = ois.readObject();
-                resp = (Response) o;
-                logger.debug(o.toString());
+                if (o instanceof SecureResponse) {
+                    logger.debug("Got secure response."); 
+                } else {
+                    logger.debug("Don't understand the response."); 
+                }
             } catch (ClassNotFoundException ex) {
                 ex.printStackTrace(); 
             }
