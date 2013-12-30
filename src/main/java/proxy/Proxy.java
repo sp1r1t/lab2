@@ -555,6 +555,9 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                     Object o = channel.read();
                     
                     // SECURE REQUEST
+                    // this is just used for the secure login, afterwards
+                    // the channel has already extracted the real request at
+                    // this point.
                     if(o instanceof SecureRequest) {
                         logger.debug("Got secure request.");
                         SecureRequest request = (SecureRequest) o;
