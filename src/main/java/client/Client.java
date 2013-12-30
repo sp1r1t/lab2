@@ -104,6 +104,7 @@ public class Client {
     private Cipher aesCipher = null;
 
     // communication channel
+    private Channel channel;
     
     /**
      * main function
@@ -201,13 +202,15 @@ public class Client {
             return;
         } 
 
+        channel = new TCPChannel(ois, oos);
+
         // set up shell
         cli = new ClientCli();
         shell.register(cli);
         logger.info("Starting the shell.");
         Future shellfuture = pool.submit(shell);
 
-        System.out.println("Client started."); 
+        logger.info("Client started.");
 
         /*
         // for now join shell
@@ -219,7 +222,7 @@ public class Client {
         logger.info("Caught ExecutionExcpetion while waiting for shell.");
         } */
 
-        logger.info("Closing main.");
+        //logger.info("Closing main.");
     }
 
     private PublicKey readPublicKey(String name) throws IOException {
@@ -338,7 +341,8 @@ public class Client {
             // send request (1st msg)
             SecureRequest req = new SecureRequest(loginReqCipher);
             try {
-                oos.writeObject(req);
+                //oos.writeObject(req);
+                channel.write(req);
             } catch (IOException ex) {
                 logger.debug(ex.getMessage());
                 return false;
@@ -358,7 +362,8 @@ public class Client {
             logger.debug("Waiting for response");
             Object o;
             try {
-                o = ois.readObject();
+                //o = ois.readObject();
+                o = channel.read();
             } catch (Exception ex) {
                 logger.debug(ex.getMessage());
                 return null;
@@ -447,7 +452,8 @@ public class Client {
                 new SecureResponse(prxChCiph);
             logger.debug("Sending proxy challenge.");
             try {
-                oos.writeObject(prxChResp);
+                //oos.writeObject(prxChResp);
+                channel.write(prxChResp);
             } catch (IOException ex) {
                 logger.debug(ex.getMessage());
                 return false;
@@ -462,7 +468,8 @@ public class Client {
         private Response loginMessage4() {
             Object o;
             try {
-                o = ois.readObject();
+                //o = ois.readObject();
+                o = channel.read();
             } catch (Exception ex) {
                 logger.debug(ex.getMessage());
                 return null;
@@ -497,11 +504,13 @@ public class Client {
             logger.debug("password is " + password);
 
             LoginRequest req = new LoginRequest(username, password);
-            oos.writeObject(req);
+            //oos.writeObject(req);
+            channel.write(req);
 
             LoginResponse resp;
             try {
-                Object o = ois.readObject();
+                //Object o = ois.readObject();
+                Object o = channel.read();
                 if(o instanceof LoginResponse) {
                     resp = (LoginResponse) o;
                     logger.debug(resp.getType());
@@ -534,11 +543,13 @@ public class Client {
         @Command
         public Response credits() throws IOException {
             CreditsRequest req = new CreditsRequest(sid);
-            oos.writeObject(req);
+            //oos.writeObject(req);
+            channel.write(req);
 
             Response response = null;
             try {
-                Object o = ois.readObject();
+                //Object o = ois.readObject();
+                Object o = channel.read();
                 if(o instanceof CreditsResponse) {
                     CreditsResponse cresp = (CreditsResponse) o;
                     response = new MessageResponse("You have " + 
@@ -561,11 +572,13 @@ public class Client {
         @Command
         public Response buy(long credits) throws IOException {
             BuyRequest req = new BuyRequest(sid, credits);
-            oos.writeObject(req);
+            //oos.writeObject(req);
+            channel.write(req);
 
             Response response = null;
             try {
-                Object o = ois.readObject();
+                //Object o = ois.readObject();
+                Object o = channel.read();
                 if(o instanceof BuyResponse) {
                     BuyResponse bresp = (BuyResponse) o;
                     response = new MessageResponse("You now have " + 
@@ -589,11 +602,13 @@ public class Client {
         @Command
         public Response list() throws IOException {
             ListRequest req = new ListRequest(sid);
-            oos.writeObject(req);
+            //oos.writeObject(req);
+            channel.write(req);
 
             Response resp = null;
             try {
-                Object o = ois.readObject();
+                //Object o = ois.readObject();
+                Object o = channel.read();
                 if(o instanceof ListResponse) {
                     resp = (ListResponse) o;
                     //logger.debug(resp.toString());
@@ -619,14 +634,16 @@ public class Client {
         public Response download(String filename) throws IOException {
             DownloadTicketRequest req = 
                 new DownloadTicketRequest(sid, filename);
-            oos.writeObject(req);
+            //oos.writeObject(req);
+            channel.write(req);
 
 
             // get download ticket
             DownloadTicket ticket = null;
             Response resp = null;
             try {
-                Object o = ois.readObject();
+                //Object o = ois.readObject();
+                Object o = channel.read();
                 if(o instanceof DownloadTicketResponse) {
                     DownloadTicketResponse tresp = (DownloadTicketResponse) o;
                     ticket = tresp.getTicket();
@@ -705,10 +722,12 @@ public class Client {
                 br.close();
                 
                 Request request = new UploadRequest(sid, filename, 1, content);
-                oos.writeObject(request);
+                //oos.writeObject(request);
+                channel.write(request);
 
                 try {
-                    Object o = ois.readObject();
+                    //Object o = ois.readObject();
+                    Object o = channel.read();
                     if(o instanceof MessageResponse) {
                         response = (MessageResponse) o;
                     } else {
@@ -732,11 +751,13 @@ public class Client {
         @Command
         public MessageResponse logout() throws IOException {
             LogoutRequest req = new LogoutRequest(sid);
-            oos.writeObject(req);
+            //oos.writeObject(req);
+            channel.write(req);
 
             MessageResponse resp = null;
             try {
-                Object o = ois.readObject();
+                //Object o = ois.readObject();
+                Object o = channel.read();
                 if(o instanceof MessageResponse) {
                     resp = (MessageResponse) o;
                     logger.debug(resp.toString());
@@ -778,9 +799,11 @@ public class Client {
             //logger.debug("muuuh");
             // proxy test
             String muh = new String("muuuh");
-            oos.writeObject(muh);
+            //oos.writeObject(muh);
+            channel.write(muh);
             try {
-                Object o = ois.readObject();
+                //Object o = ois.readObject();
+                Object o = channel.read();
                 if(o instanceof MessageResponse) {
                     MessageResponse mresp = (MessageResponse) o;
                     logger.info(mresp.getMessage());
