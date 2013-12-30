@@ -77,6 +77,9 @@ public class FileServer {
     // UDP port of the proxy to send alive packets to
     private int udpPort;
 
+    // hmac dir for proxy com
+    private String hMacDir;
+
     /**
      * main function
      */
@@ -126,6 +129,8 @@ public class FileServer {
             proxy = config.getString(key);
             key = "proxy.udp.port";
             udpPort = config.getInt(key);
+            key = "hmac.key";
+            hMacDir = config.getString(key);
         } catch (MissingResourceException x) {
             if(key == name) {
                 logger.fatal("Config " + key + 
@@ -185,7 +190,7 @@ public class FileServer {
             logger.info("Caught ExecutionExcpetion while waiting for shell.");
             }*/
 
-        logger.info("Closing main");
+        //logger.info("Closing main");
     }
 
     public IFileServerCli getCli() {
@@ -304,7 +309,7 @@ public class FileServer {
                 // configure connection
                 aliveSocket = new DatagramSocket();
                 
-                String msg = new String(String.valueOf(tcpPort));
+                String msg = new String("!alive " + String.valueOf(tcpPort));
                 byte[] buf = msg.getBytes();
 
                 InetAddress address = InetAddress.getByName(proxy);

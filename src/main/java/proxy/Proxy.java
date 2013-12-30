@@ -110,6 +110,9 @@ public class Proxy {
     // proxy priv key dir
     private String privateKeyDir;
 
+    // hmac dir for fs com
+    private String hMacDir;
+
     /**
      * main function
      */
@@ -163,6 +166,8 @@ public class Proxy {
             keyDir = config.getString(key) + "/";
             key = "key";
             privateKeyDir = config.getString(key);
+            key = "hmac.key";
+            hMacDir = config.getString(key);
         }
         catch (MissingResourceException x) {
             if(key == name) {
@@ -234,7 +239,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
 }
 */
         
-        logger.info("Closing main");
+        //logger.info("Closing main");
     }
 
     public IProxyCli getCli() {
@@ -407,6 +412,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                         try {
                             aliveSocket.receive(packet);
                             String data = new String(packet.getData()).trim();
+                            data = data.substring(7);
                             Integer tcpPort = Integer.valueOf(data);
                             Integer port = packet.getPort();
                             String host = packet.getAddress().getHostAddress();
