@@ -8,22 +8,28 @@ import java.nio.*;
 import java.nio.file.*;
 import java.nio.charset.*;
 import java.net.*;
+import java.rmi.RemoteException;
 import java.security.*;
-import java.security.spec.*;
+
 import javax.crypto.*;
 import javax.crypto.spec.*;
 
 import cli.*;
+import shared.IProxyManagementComponent;
+import shared.PublicKeyRequest;
+import shared.PublicKeyResponse;
+import shared.ReadQuorumResponse;
+import shared.SubscribeRequest;
+import shared.SubscribeResponse;
+import shared.TopThreeResponse;
+import shared.WriteQuorumResponse;
 import util.*;
 import model.*;
-import proxy.*;
 import message.*;
 import message.request.*;
 import message.response.*;
-import model.*;
 
 import org.apache.log4j.*;
-
 import org.bouncycastle.util.encoders.Base64;
 import org.bouncycastle.openssl.*;
 import org.bouncycastle.jce.provider.*;
@@ -221,6 +227,13 @@ public class Proxy {
         shell.register(cli);
         logger.info("Starting the shell.");
         Future shellfuture = pool.submit(shell);
+        
+        // Instantiate ProxyManagementHandler 
+        ProxyManagementHandler proxyManagementHandler = new ProxyManagementHandler();  
+        
+        // starting registry
+        RegistryHelper registryHelper = RegistryHelper.getInstance();
+        registryHelper.startRegistry(proxyManagementHandler);
 
         System.out.println("Proxy started."); 
 /*
@@ -1142,5 +1155,52 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
         public void muh() throws IOException {
             System.out.println("muuuhhh");
         }
+
+    }
+    
+    public class ProxyManagementHandler implements IProxyManagementComponent {
+
+        @Override
+        public ReadQuorumResponse getReadQuorum() {
+            // TODO Auto-generated method stub
+            logger.debug("getReadQuorum");
+            return null;
+        }
+
+        @Override
+        public WriteQuorumResponse getWriteQuorum() {
+            // TODO Auto-generated method stub
+            logger.debug("getWriteQuorum");
+            return null;
+        }
+
+        @Override
+        public TopThreeResponse getTopThree() {
+            // TODO Auto-generated method stub
+            logger.debug("getTopThree");
+            return null;
+        }
+
+        @Override
+        public SubscribeResponse subscribe(SubscribeRequest subscribeRequest) {
+            // TODO Auto-generated method stub
+            logger.debug("subscribe");
+            return null;
+        }
+
+        @Override
+        public PublicKeyResponse getPublicKey() {
+            // TODO Auto-generated method stub
+            logger.debug("getPublicKey");
+            return null;
+        }
+
+        @Override
+        public void sendPublicKey(PublicKeyRequest publicKeyRequest) {
+            // TODO Auto-generated method stub
+            logger.debug("setPublicKey");
+            
+        }
+        
     }
 }

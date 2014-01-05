@@ -1,29 +1,29 @@
 package client;
 
 import java.util.*;
-import java.util.regex.*;
 import java.util.concurrent.*;
 import java.io.*;
-import java.nio.*;
 import java.nio.file.*;
 import java.nio.charset.*;
 import java.net.*;
+import java.rmi.NotBoundException;
+import java.rmi.RemoteException;
+import java.rmi.registry.LocateRegistry;
+import java.rmi.registry.Registry;
 import java.security.*;
-import java.security.spec.*;
 import javax.crypto.*;
 import javax.crypto.spec.*;
 
 import cli.*;
+import shared.IClientRMICommands;
+import shared.IProxyManagementComponent;
 import util.*;
-import client.*;
 import message.*;
 import message.request.*;
 import message.response.*;
 import model.*;
 
 import org.apache.log4j.*;
-//import org.apache.commons.codec.binary.Hex;
-
 import org.bouncycastle.util.encoders.Base64;
 import org.bouncycastle.openssl.*;
 import org.bouncycastle.jce.provider.*;
@@ -105,6 +105,9 @@ public class Client {
 
     // communication channel
     private Channel channel;
+
+    // RMI Interface (Proxy stub)
+    private IProxyManagementComponent proxyManagementComponent;
     
     /**
      * main function
@@ -156,6 +159,22 @@ public class Client {
                 logger.fatal("Key " + key + " is not defined.");
             }
             System.exit(1);
+        }
+        
+        // read rmi config
+        Config rmiConfig = new Config("mc");
+        String proxyHost = rmiConfig.getString("proxy.host");
+        int proxyRmiPort = rmiConfig.getInt("proxy.rmi.port");
+        String bindingName = rmiConfig.getString("binding.name");
+        
+        // init registry
+        try {
+            Registry registry = LocateRegistry.getRegistry(proxyHost, proxyRmiPort);
+            proxyManagementComponent = (IProxyManagementComponent) registry.lookup(bindingName); 
+        } catch (RemoteException e) {
+            logger.error("Failed locating registry", e);
+        } catch (NotBoundException e) {
+            logger.error("Failed looking up binding name", e);
         }
 
         // read proxy pub key
@@ -265,7 +284,7 @@ public class Client {
         }
     }
 
-    class ClientCli implements IClientCli {
+    class ClientCli implements IClientCli, IClientRMICommands {
         private Logger logger;
 
         public ClientCli() {
@@ -823,6 +842,55 @@ public class Client {
             } catch (ClassNotFoundException x) {
                 logger.info("Class not found.");
             }
+        }
+
+        @Override
+        @Command
+        public MessageResponse readquorum() {
+            // TODO Auto-generated method stub
+            logger.debug("readquorum client");
+            try {
+                proxyManagementComponent.getReadQuorum();
+            } catch (RemoteException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
+            return null;
+        }
+
+        @Override
+        @Command
+        public MessageResponse writequorum() {
+            // TODO Auto-generated method stub
+            return null;
+        }
+
+        @Override
+        @Command
+        public MessageResponse topthree() {
+            // TODO Auto-generated method stub
+            return null;
+        }
+
+        @Override
+        @Command
+        public MessageResponse subscribe(String filename) {
+            // TODO Auto-generated method stub
+            return null;
+        }
+
+        @Override
+        @Command
+        public MessageResponse getpublickey() {
+            // TODO Auto-generated method stub
+            return null;
+        }
+
+        @Override
+        @Command
+        public MessageResponse sendpublickey() {
+            // TODO Auto-generated method stub
+            return null;
         }
     }
 
