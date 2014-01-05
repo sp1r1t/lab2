@@ -1,6 +1,7 @@
 package client;
 
 import java.util.*;
+import java.util.Map.Entry;
 import java.util.concurrent.*;
 import java.io.*;
 import java.nio.file.*;
@@ -11,12 +12,15 @@ import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.security.*;
+
 import javax.crypto.*;
 import javax.crypto.spec.*;
 
 import cli.*;
 import shared.IClientRMICommands;
 import shared.IProxyManagementComponent;
+import shared.PublicKeyRequest;
+import shared.PublicKeyResponse;
 import util.*;
 import message.*;
 import message.request.*;
@@ -846,51 +850,51 @@ public class Client {
 
         @Override
         @Command
-        public MessageResponse readquorum() {
-            // TODO Auto-generated method stub
-            logger.debug("readquorum client");
-            try {
-                proxyManagementComponent.getReadQuorum();
-            } catch (RemoteException e) {
-                // TODO Auto-generated catch block
-                e.printStackTrace();
+        public MessageResponse readQuorum() throws RemoteException {
+            return new MessageResponse("Read-Quorum is set to " + proxyManagementComponent.getReadQuorum() + ".");
+        }
+
+        @Override
+        @Command
+        public MessageResponse writeQuorum() throws RemoteException {
+            return new MessageResponse("Write-Quorum is set to " + proxyManagementComponent.getWriteQuorum() + ".");
+        }
+
+        @Override
+        @Command
+        public MessageResponse topThreeDownloads() throws RemoteException {
+            Map<String, Integer> list = proxyManagementComponent.getTopThree();
+            String message = "Top Three Downloads:";
+            int index = 1;
+            for (Entry e: list.entrySet()) {
+                message += "\n" + index++ + ". " + e.getKey() + " " + e.getValue();
             }
+            return new MessageResponse(message);
+        }
+
+        @Override
+        @Command
+        public MessageResponse subscribe(String filename, int numberOfDownloads) {
+            // TODO Auto-generated method stub
+            // TODO RMI callback
             return null;
         }
 
         @Override
         @Command
-        public MessageResponse writequorum() {
-            // TODO Auto-generated method stub
-            return null;
+        public MessageResponse getProxyPublicKey() throws RemoteException {
+            PublicKeyResponse publicKeyResponse = proxyManagementComponent.getPublicKey();
+            // TODO read and store public key
+            return new MessageResponse("Successfully received public key of Proxy.");
         }
 
         @Override
         @Command
-        public MessageResponse topthree() {
-            // TODO Auto-generated method stub
-            return null;
-        }
-
-        @Override
-        @Command
-        public MessageResponse subscribe(String filename) {
-            // TODO Auto-generated method stub
-            return null;
-        }
-
-        @Override
-        @Command
-        public MessageResponse getpublickey() {
-            // TODO Auto-generated method stub
-            return null;
-        }
-
-        @Override
-        @Command
-        public MessageResponse sendpublickey() {
-            // TODO Auto-generated method stub
-            return null;
+        public MessageResponse setUserPublicKey(String userName) throws RemoteException {
+            // TODO initialize object to be transmitted (public key of .... )
+            PublicKeyRequest publicKeyRequest = null;
+            proxyManagementComponent.sendPublicKey(publicKeyRequest);
+            return new MessageResponse("Successfully transmitted public key of user: " + userName + ".");
         }
     }
 

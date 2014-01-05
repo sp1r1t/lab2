@@ -2,20 +2,21 @@ package shared;
 
 import java.rmi.Remote;
 import java.rmi.RemoteException;
+import java.util.Map;
 
 public interface IProxyManagementComponent extends Remote {
     
-    ReadQuorumResponse getReadQuorum() throws RemoteException;
+    Integer getReadQuorum() throws RemoteException;
     
-    WriteQuorumResponse getWriteQuorum() throws RemoteException;
+    Integer getWriteQuorum() throws RemoteException;
     
-    TopThreeResponse getTopThree() throws RemoteException;
+    Map<String, Integer> getTopThree() throws RemoteException;
     
-    SubscribeResponse subscribe(SubscribeRequest subscribeRequest) throws RemoteException;
+    Boolean subscribe(SubscribeRequest subscribeRequest) throws RemoteException;
     
     PublicKeyResponse getPublicKey() throws RemoteException;
     
-    void sendPublicKey(PublicKeyRequest publicKeyRequest) throws RemoteException;
+    Boolean sendPublicKey(PublicKeyRequest publicKeyRequest) throws RemoteException;
     
     
     

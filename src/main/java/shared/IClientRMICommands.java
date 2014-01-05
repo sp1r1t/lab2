@@ -6,16 +6,16 @@ import message.response.MessageResponse;
 
 public interface IClientRMICommands {
     
-    MessageResponse readquorum();
+    MessageResponse readQuorum() throws RemoteException;
     
-    MessageResponse writequorum();
+    MessageResponse writeQuorum() throws RemoteException;
     
-    MessageResponse topthree();
+    MessageResponse topThreeDownloads() throws RemoteException;
     
-    MessageResponse subscribe(String filename);
+    MessageResponse subscribe(String filename, int numberOfDownloads) throws RemoteException;
     
-    MessageResponse getpublickey();
+    MessageResponse getProxyPublicKey() throws RemoteException;
     
-    MessageResponse sendpublickey();
+    MessageResponse setUserPublicKey(String userName) throws RemoteException;
 
 }

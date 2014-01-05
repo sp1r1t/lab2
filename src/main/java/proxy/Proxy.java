@@ -18,11 +18,7 @@ import cli.*;
 import shared.IProxyManagementComponent;
 import shared.PublicKeyRequest;
 import shared.PublicKeyResponse;
-import shared.ReadQuorumResponse;
 import shared.SubscribeRequest;
-import shared.SubscribeResponse;
-import shared.TopThreeResponse;
-import shared.WriteQuorumResponse;
 import util.*;
 import model.*;
 import message.*;
@@ -1161,31 +1157,31 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
     public class ProxyManagementHandler implements IProxyManagementComponent {
 
         @Override
-        public ReadQuorumResponse getReadQuorum() {
+        public Integer getReadQuorum() {
             // TODO Auto-generated method stub
             logger.debug("getReadQuorum");
-            return null;
+            return -1;
         }
 
         @Override
-        public WriteQuorumResponse getWriteQuorum() {
+        public Integer getWriteQuorum() {
             // TODO Auto-generated method stub
             logger.debug("getWriteQuorum");
-            return null;
+            return -1;
         }
 
         @Override
-        public TopThreeResponse getTopThree() {
+        public Map<String, Integer> getTopThree() {
             // TODO Auto-generated method stub
             logger.debug("getTopThree");
-            return null;
+            return new HashMap<String, Integer>();
         }
 
         @Override
-        public SubscribeResponse subscribe(SubscribeRequest subscribeRequest) {
+        public Boolean subscribe(SubscribeRequest subscribeRequest) {
             // TODO Auto-generated method stub
             logger.debug("subscribe");
-            return null;
+            return true;
         }
 
         @Override
@@ -1196,10 +1192,10 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
         }
 
         @Override
-        public void sendPublicKey(PublicKeyRequest publicKeyRequest) {
+        public Boolean sendPublicKey(PublicKeyRequest publicKeyRequest) {
             // TODO Auto-generated method stub
             logger.debug("setPublicKey");
-            
+            return true;
         }
         
     }
