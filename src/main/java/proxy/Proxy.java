@@ -8,6 +8,10 @@ import java.nio.*;
 import java.nio.file.*;
 import java.nio.charset.*;
 import java.net.*;
+import java.security.*;
+import java.security.spec.*;
+import javax.crypto.*;
+import javax.crypto.spec.*;
 
 import cli.*;
 import util.*;
@@ -20,6 +24,9 @@ import model.*;
 
 import org.apache.log4j.*;
 
+import org.bouncycastle.util.encoders.Base64;
+import org.bouncycastle.openssl.*;
+import org.bouncycastle.jce.provider.*;
 
 /**
  * The Proxy
@@ -33,16 +40,23 @@ public class Proxy {
 
     // stop signal
     private boolean stop = false;
+    
+    //first upload request happened?
+    private boolean upload = false;
 
+	// read- and writeQuorum
+    private int readQuorum;
+	private int writeQuorum;
+	
     // logger
     private static Logger logger;
-    {
-        // set up logger
-        logger = Logger.getLogger("Proxy");
-        logger.setLevel(Level.ERROR);
-        BasicConfigurator.configure();
-        logger.debug("Logger is set up.");
-    }
+        {
+            // set up logger
+            logger = Logger.getLogger("Proxy");
+            logger.setLevel(Level.DEBUG);
+            BasicConfigurator.configure();
+            logger.debug("Logger is set up.");
+        }
 
     // a list of all users
     private ArrayList<User> users;
@@ -80,6 +94,9 @@ public class Proxy {
     // config
     private Config config;
 
+    // proxy private key
+    private PrivateKey privateKey;
+
     //* everything below is read from the config file *//
 
     // time interval after which a fileserver is set offline
@@ -93,6 +110,12 @@ public class Proxy {
 
     // UDP port to listen for keepAlive packages
     private Integer udpPort;
+
+    // user keys dir
+    private String keyDir;
+
+    // proxy priv key dir
+    private String privateKeyDir;
 
     /**
      * main function
@@ -128,6 +151,10 @@ public class Proxy {
      * Entry function for running the services
      */
     public void run() throws IOException {
+        // make bouncy caslte provider default
+        Provider prov = new org.bouncycastle.jce.provider.BouncyCastleProvider();
+        Security.insertProviderAt(prov, 1);
+
         // read proxy config
         String key = name;
         try {
@@ -139,6 +166,10 @@ public class Proxy {
             timeout = config.getInt(key);
             key = "fileserver.checkPeriod";
             checkPeriod = config.getInt(key);
+            key = "keys.dir";
+            keyDir = config.getString(key) + "/";
+            key = "key";
+            privateKeyDir = config.getString(key);
         }
         catch (MissingResourceException x) {
             if(key == name) {
@@ -161,6 +192,17 @@ public class Proxy {
 
         // read user config
         readUserConfig();
+
+        // read private key
+       /* try {
+            privateKey = readPrivateKey(privateKeyDir);
+        } catch (IOException ex) {
+            logger.fatal("Couldn't read proxys private key.");
+            logger.debug(ex.getMessage());
+            System.exit(1);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        } TODO: wieder einfuegen*/ 
 
         // create thread pool
         pool = Executors.newFixedThreadPool(30);
@@ -189,14 +231,14 @@ public class Proxy {
 
         System.out.println("Proxy started."); 
 /*
-        // for now join shell
-        try {
-            shellfuture.get();
-        } catch (InterruptedException x) {
-            logger.info("Caught interrupt while waiting for shell.");
-        } catch (ExecutionException x) {
-            logger.info("Caught ExecutionExcpetion while waiting for shell.");
-        }
+// for now join shell
+try {
+shellfuture.get();
+} catch (InterruptedException x) {
+logger.info("Caught interrupt while waiting for shell.");
+} catch (ExecutionException x) {
+logger.info("Caught ExecutionExcpetion while waiting for shell.");
+}
 */
         
         logger.info("Closing main");
@@ -206,6 +248,14 @@ public class Proxy {
         return cli;
     }
 
+    public int getReadQuorum() {
+    	return readQuorum;
+    }
+
+    public int getWriteQuorum() {
+    	return writeQuorum;
+    }
+    
     /**
      * Read user information from the config file.
      */
@@ -258,15 +308,52 @@ public class Proxy {
         }
         catch (Exception x) {
             logger.error("Your user config " +
-                               "is corrupted. Make sure you have " +
-                               "supplied all necessary variables.");
+                         "is corrupted. Make sure you have " +
+                         "supplied all necessary variables.");
             return 1;
         }
         return 0;
     }
 
-    private FileServer getCurrentFileserver() {
-        // get first online fs
+    private PublicKey readPublicKey(String name) throws IOException {
+        Charset charset = Charset.forName("UTF-8");
+        Path file = Paths.get(name);
+        BufferedReader reader = Files.newBufferedReader(file,charset);
+        PEMReader parser = new PEMReader(reader);
+        Object o = parser.readObject();
+        //logger.debug(o.getClass()); 
+        if (o instanceof JCERSAPublicKey) {
+            return (JCERSAPublicKey) o;
+        } else {
+            logger.error("Wrong key type");
+            return null;
+        }
+    }
+
+    private PrivateKey readPrivateKey(String name) throws IOException {
+        Charset charset = Charset.forName("UTF-8");
+        Path file = Paths.get(name);
+        BufferedReader reader = Files.newBufferedReader(file,charset);
+        PEMReader parser = new PEMReader(reader, new ProxyPasswordFinder());
+        Object o = parser.readObject();
+        //logger.debug(o.getClass()); 
+        if (o instanceof KeyPair) {
+            return ((KeyPair) o).getPrivate();
+        } else {
+            logger.error("Wrong key type");
+            return null;
+        }
+    }
+
+    class ProxyPasswordFinder implements PasswordFinder {
+        public char[] getPassword() {
+            return "12345".toCharArray(); 
+        }
+    }
+
+    private ArrayList<FileServer> getCurrentFileserver() {  //TODO: download readQuorum
+        /*
+    	// get first online fs
         FileServer lowest = null;
         for(FileServer fs : fileservers) {
             if(fs.isOnline()) { 
@@ -278,17 +365,43 @@ public class Proxy {
         if(lowest == null) {
             // no fileservers online
             return null;
+        }*/
+        
+        // if there already was an upload: check as many fileservers as the readQuorum specifies - otherwise calculate a new readQuorum
+        // calculate readQuorum: number of fileservers / 2
+        ArrayList<FileServer> onlineFS = new ArrayList<FileServer>();
+        for (FileServer f : fileservers) {
+        	if (f.isOnline()) {
+        		onlineFS.add(f);
+        	}
         }
-
+        
+        if(onlineFS.size() == 0) {
+        	return null;  //no fileservers online
+        }
+        
+        if(upload == false) {
+        	readQuorum = onlineFS.size()/2;
+        }
+        
         // search for lowest usage fs
-        for(FileServer fs : fileservers) {
-            if(!fs.isOnline()) {continue;};
+        Collections.sort(onlineFS);
+        ArrayList<FileServer> lowestUsage = new ArrayList<FileServer>();
+        for (int i = 0; i < readQuorum; i++) {
+        	lowestUsage.add(onlineFS.get(i));
+        }
+        
+        return lowestUsage;
+        /*for(FileServer fs : fileservers) {
+            if(!fs.isOnline()) {
+            	continue;
+            };
             if(lowest.getUsage() > fs.getUsage()) {
                 lowest = fs;
             }
         }
             
-        return lowest;
+        return lowest; */
     }
             
     private class FileServerTimeoutChecker extends TimerTask {
@@ -316,7 +429,7 @@ public class Proxy {
          * Constructor
          */
         public KeepAliveListener(){
-            logger = Logger.getLogger("Proxy.KeepAliveListener");
+            //logger = Logger.getLogger("Proxy.KeepAliveListener");
         }
 
         /**
@@ -389,11 +502,11 @@ public class Proxy {
     }
 
     private class ClientConnectionListener implements Runnable {
-        Logger logger;
+        //Logger logger;
         ServerSocket serverSocket;
 
         public ClientConnectionListener() {
-            logger = Logger.getLogger("Proxy.ClientConnectionListener");
+            //logger = Logger.getLogger("Proxy.ClientConnectionListener");
         }
 
         /**
@@ -443,8 +556,9 @@ public class Proxy {
          * member variables
          */
         private Socket clientSocket;
-        private Logger logger;
+        //private Logger logger;
         private User user;
+        private Channel channel;
 
         /** 
          * Constructor
@@ -452,7 +566,7 @@ public class Proxy {
         public ClientConnection(Socket clientSocket) {
             this.clientSocket = clientSocket;
             clientSockets.add(clientSocket);
-            logger = Logger.getLogger("Proxy.ClientConnection");
+            //logger = Logger.getLogger("Proxy.ClientConnection");
         }
 
         /**
@@ -467,19 +581,43 @@ public class Proxy {
                 ObjectOutputStream oos = 
                     new ObjectOutputStream(clientSocket.getOutputStream());
 
-                
+                channel = new TCPChannel(ois, oos);
                 Response response = null;
 
                 // listen for requests
                 while(!Thread.interrupted()) {
                     // recieve request
-                    Object o = ois.readObject();
+                    //Object o = ois.readObject();
+                    Object o = channel.read();
                     
+                    // SECURE REQUEST
+                    if(o instanceof SecureRequest) {
+                        logger.debug("Got secure request.");
+                        SecureRequest request = (SecureRequest) o;
+                        byte[] reqCipher = request.getBytes();
+                        Object reqObj;
+                        try {
+                            reqObj = 
+                                Cryptopus.decryptObject(reqCipher, privateKey);
+                            // forward decrypted request
+                            o = reqObj;
+                        } catch (Exception ex) {
+                            logger.debug(ex.getMessage());
+                            response = new MessageResponse("Request failed.");;
+                        }
+                    }
+
                     // LOGIN
                     if(o instanceof LoginRequest) {
                         logger.debug("Got login request.");
                         LoginRequest request = (LoginRequest) o;
                         response = login(request);
+                    }
+                    // SECURE LOGIN
+                    else if(o instanceof SecureLoginRequest) {
+                        logger.debug("Got secure login reqeust");
+                        SecureLoginRequest request = (SecureLoginRequest) o;
+                        response = secureLogin(request);
                     }
                     // CREDITS
                     else if (o instanceof CreditsRequest) {
@@ -516,7 +654,7 @@ public class Proxy {
                         logger.debug("Got download request.");
                         DownloadTicketRequest request = 
                             (DownloadTicketRequest) o;
-                        // verify reqeust
+                        // verify request
                         response = verify(request.getSid()); 
                         if(response == null) {
                             response = download(request);
@@ -526,7 +664,7 @@ public class Proxy {
                     else if (o instanceof UploadRequest) {
                         logger.debug("Got upload request.");
                         UploadRequest request = (UploadRequest) o;
-                        // verify reqeust
+                        // verify request
                         response = verify(request.getSid()); 
                         if(response == null) {
                             response = upload(request);
@@ -553,10 +691,17 @@ public class Proxy {
                     
                     // send response back
                     if(response != null) {
-                        oos.writeObject(response);
+                        //oos.writeObject(response);
+                        channel.write(response);
+                        if (o instanceof LogoutRequest) {
+                            // revert to unencrypted channel
+                            logger.debug("Degrading to unencrypted channel."); 
+                            channel = channel.degrade();
+                        }
                     } else {
                         String msg = "Dwarfes attacked us, we were defenseless!";
-                        oos.writeObject(new MessageResponse(msg));
+                        //oos.writeObject(new MessageResponse(msg));
+                        channel.write(new MessageResponse(msg));
                     }
                 }
             } catch (IOException x) {
@@ -607,6 +752,178 @@ public class Proxy {
                 return false;
             }
         }                
+        
+        private Response secureLogin(SecureLoginRequest request) {
+            Response failedResp = new MessageResponse("Could not log in.");
+            SecureLoginRequest req = request;
+            //-- MESSAGE 1 --//            
+            // implicit
+
+            //-- MESSAGE 2 --//
+
+            // get user pub key
+            String username = req.getUsername();
+            PublicKey userPubKey;
+            try {
+                userPubKey = readPublicKey(keyDir + username + ".pub.pem");
+            } catch (Exception ex) {
+                logger.debug(ex.getMessage());
+                return failedResp;
+            }
+            
+            // craft ok response
+            logger.debug("Crafting response."); 
+            
+            // client challenge
+            /*byte[] clChB64 = req.getClientChallenge();
+              byte[] clCh = Base64.decode(clChB64);*/
+            byte[] clCh = req.getClientChallenge();
+            
+            SecureRandom random = new SecureRandom();
+            
+            // proxy challenge
+            byte[] proxyChallenge = new byte[32];
+            random.nextBytes(proxyChallenge);
+            byte[] proxyChallengeB64 = Base64.encode(proxyChallenge);
+            
+            // secret aes key
+            KeyGenerator kgen;
+            try {
+                kgen = KeyGenerator.getInstance("AES");
+            } catch (Exception ex) {
+                logger.debug(ex.getMessage());
+                return failedResp;
+            }
+            kgen.init(256);
+            SecretKey skey = kgen.generateKey();
+            byte[] skeybytes = skey.getEncoded();
+            byte[] skeybytesB64 = Base64.encode(skeybytes);
+            
+            // initialization vector
+            byte[] ivparam = new byte[16];
+            random.nextBytes(ivparam);
+            byte[] ivparamB64 = Base64.encode(ivparam);
+            
+            // craft response
+            OkResponse okresp = new OkResponse(clCh, 
+                                               proxyChallenge,
+                                               skeybytes, ivparam);
+            
+            // encrypt response
+            byte[] respCipher;
+            logger.debug("Encrypting response.");
+            try {
+                respCipher = Cryptopus.encryptObject(okresp, userPubKey);   
+            } catch (Exception ex) {
+                logger.debug(ex.getMessage()); 
+                return failedResp;
+            }
+            
+            // encode response
+            byte[] respCipherB64 = Base64.encode(respCipher);
+            
+            // send response
+            SecureResponse resp = new SecureResponse(respCipher);
+            logger.debug("Sending secure response back."); 
+            try {
+                //oos.writeObject(resp);
+                channel.write(resp);
+            } catch (Exception ex) {
+                logger.debug(ex.getMessage());
+                return failedResp;
+            }
+            
+            //-- MESSAGE 3 --//
+
+            // create cipher
+            Cipher aesCipher; 
+            IvParameterSpec spec; 
+            try {
+                aesCipher = Cipher.getInstance("AES/CTR/NoPadding");
+                spec = new IvParameterSpec(ivparam);
+                aesCipher.init(Cipher.DECRYPT_MODE, skey, spec);
+            } catch (Exception ex) {
+                logger.debug(ex.getMessage());
+                return failedResp;
+            }
+            
+            // read proxy challenge response from client
+            logger.debug("Waiting for challenge response.");
+            Object prxChObj;
+            try {
+                //prxChObj = ois.readObject();
+                prxChObj = channel.read();
+            } catch (Exception ex) {
+                logger.debug(ex.getMessage());
+                return failedResp;
+            }
+            if (prxChObj instanceof SecureResponse) {
+                logger.debug("Got challenge response."); 
+                SecureResponse prxChResp = (SecureResponse) prxChObj;
+                
+                // decode proxy challenge
+                /*byte[] prxChCipherB64 = prxChResp.getBytes();
+                  byte[] prxChCipher = Base64.decode(prxChCipherB64);*/
+                byte[] prxChCipher = prxChResp.getBytes();
+                
+                // decrypt proxy challenge
+                byte[] prxChPlain;
+                try {
+                    prxChPlain = aesCipher.doFinal(prxChCipher);
+                } catch (Exception ex) {
+                    logger.debug(ex.getMessage());
+                    logger.error("Couldn't decrypt proxy challenge.");
+                    return failedResp;
+                }
+                
+                // verify proxy challenge
+                if(Arrays.equals(prxChPlain, proxyChallenge)) {
+                    logger.debug("Proxy challenge won.");
+
+                    // switch to secure channel
+                    logger.debug("Switching to secure channel."); 
+                    channel = new SecureChannel(channel, skey, spec);
+
+                    //-- MESSAGE 4 --//
+                    loginUser(username);
+                    if (user != null) {
+                        user.setSecretKey(skey);
+                        user.setSpec(spec);
+                        return new LoginResponse(
+                            LoginResponse.Type.SUCCESS, user.getSid());
+                    }
+                    
+                }
+                else {
+                    logger.debug("Proxy challenge failed."); 
+                }
+                
+            } else {
+                logger.debug("That's not the expected class :/");
+                logger.debug(prxChObj.getClass()); 
+            }
+            return failedResp;
+        }
+        
+        
+        private void loginUser(String username) {
+            // try to log in
+            logger.debug("Logging in user: " + username);
+            for(User u : users) {
+                // search matching user
+                if(u.getName().equals(username)) {
+                    if(u.login()) {
+                        // successfull
+                        // create new session id
+                        UUID sid = UUID.randomUUID();
+                        u.setSid(sid);
+                        
+                        // set user for this connection
+                        user = u;
+                    } 
+                }
+            }
+        }
 
         @Override
         public LoginResponse login(LoginRequest request) throws IOException {
@@ -667,21 +984,45 @@ public class Proxy {
         }
 
         @Override
-        public Response download(DownloadTicketRequest request) throws IOException {
+        public Response download(DownloadTicketRequest request) throws IOException { //TODO: download readQuorum
             String filename;
             long filesize;
             int version;
+            FileServer usedFS = null;
+            int versionTemp = 0;
+            
 
             // get file size
             Request inforequest = new InfoRequest(request.getFilename());
-            FileServer fs = getCurrentFileserver();
-            if(fs == null) {
+            FileServerConnection fscon;
+            Object o;
+            ArrayList<FileServer> fsList = getCurrentFileserver();
+            if(fsList == null) {
                 return new MessageResponse("No file server available.");
             }
-
-            FileServerConnection fscon = new 
-                FileServerConnection(fs.getHost(), fs.getTcpPort(), inforequest);
-            Object o = fscon.call();
+            
+            for(FileServer fs : fsList) { /* wenn versionsnummer höher als gespeicherte oder versionsnummer gleichgroß und usage kleiner als usage des gespeicherten fs --> ersetzen */
+            	 Request versionrequest = new VersionRequest(request.getFilename());
+                 fscon = new FileServerConnection(fs.getHost(), fs.getTcpPort(), versionrequest);
+                 o = fscon.call();
+                 if(o instanceof VersionResponse) {
+                     VersionResponse response = (VersionResponse) o;
+                     if ((response.getVersion() > versionTemp) || ((response.getVersion() == versionTemp) && fs.getUsage() < usedFS.getUsage())) {
+                    	 versionTemp = response.getVersion();
+                    	 usedFS = fs;
+                     }
+                 } 
+                 else if (o instanceof MessageResponse) {
+                     return (MessageResponse) o;
+                 } else {
+                     logger.error("Response corrupted.");
+                     return null;
+                 }
+            }
+            	
+            	
+            fscon = new FileServerConnection(usedFS.getHost(), usedFS.getTcpPort(), inforequest);
+            o = fscon.call();
             if(o instanceof InfoResponse) {
                 InfoResponse response = (InfoResponse) o;
                 filesize = response.getSize();
@@ -697,7 +1038,7 @@ public class Proxy {
   
             // get file version
             Request versionrequest = new VersionRequest(request.getFilename());
-            fscon = new FileServerConnection(fs.getHost(), fs.getTcpPort(), 
+            fscon = new FileServerConnection(usedFS.getHost(), usedFS.getTcpPort(), 
                                              versionrequest);
             o = fscon.call();
             if(o instanceof VersionResponse) {
@@ -722,16 +1063,16 @@ public class Proxy {
                 // decrease user credits
                 user.setCredits(user.getCredits() - filesize);
                 // increase fs usage
-                fs.setUsage(fs.getUsage() + filesize);
+                usedFS.setUsage(usedFS.getUsage() + filesize);
 
                 // craft download ticket
                 String checksum = 
                     ChecksumUtils.generateChecksum(user.getName(), filename,
                                                    version, filesize);
-                InetAddress host = InetAddress.getByName(fs.getHost());
+                InetAddress host = InetAddress.getByName(usedFS.getHost());
                 DownloadTicket ticket = 
                     new DownloadTicket(user.getName(), filename, checksum,
-                                       host,fs.getTcpPort());
+                                       host,usedFS.getTcpPort());
                 
                 // send desired response
                 return new DownloadTicketResponse(ticket);
@@ -742,7 +1083,7 @@ public class Proxy {
         }
 
         @Override
-        public MessageResponse upload(UploadRequest request) throws IOException {
+        public MessageResponse upload(UploadRequest request) throws IOException { // TODO: upload writeQuorum
             FileServerConnection fscon;
             for(FileServer f : fileservers) {
                 fscon = new FileServerConnection(f.getHost(), f.getTcpPort(),
