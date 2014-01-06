@@ -8,7 +8,6 @@ import java.nio.*;
 import java.nio.file.*;
 import java.nio.charset.*;
 import java.net.*;
-import java.rmi.RemoteException;
 import java.security.*;
 
 import javax.crypto.*;
@@ -91,6 +90,9 @@ public class Proxy {
 
     // proxy private key
     private PrivateKey privateKey;
+    
+    // subscription handler
+    private SubscriptionHandler subscriptionHandler;
 
     //* everything below is read from the config file *//
 
@@ -230,6 +232,9 @@ public class Proxy {
         // starting registry
         RegistryHelper registryHelper = RegistryHelper.getInstance();
         registryHelper.startRegistry(proxyManagementHandler);
+        
+        // Instantiate SubscriptionHandler
+        subscriptionHandler = new SubscriptionHandler();
 
         System.out.println("Proxy started."); 
 /*
@@ -1017,6 +1022,9 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                     new DownloadTicket(user.getName(), filename, checksum,
                                        host,fs.getTcpPort());
                 
+                // notify subscriptionhandler
+                subscriptionHandler.notifyFileDownload(filename);
+                
                 // send desired response
                 return new DownloadTicketResponse(ticket);
                 
@@ -1048,6 +1056,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                 logger.debug("Logging out user " + user.getName() +
                              ".");
                 user.logout();
+                subscriptionHandler.removeSubscription(user.getName());
                 user = null;
             }
             return new MessageResponse("Successfully logged out.");
@@ -1118,6 +1127,9 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
 
             // clean up
             pool.shutdownNow();
+            
+            // clear subscriptions
+            subscriptionHandler.removeAllSubscriptions();
 
             DatagramSocket aliveSocket = keepAliveListener.getAliveSocket();
             if(aliveSocket != null) {
@@ -1178,20 +1190,12 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
         }
 
         @Override
-        public Boolean subscribe(SubscriptionRequest subscribeRequest) {
-            logger.debug("subscribe:" + subscribeRequest.getUsername() + " " + subscribeRequest.getFilename() +
-                    " " + subscribeRequest.getNumberOfDownloads());
+        public void subscribe(SubscriptionRequest subscribeRequest) {
+            // TODO if not logged in, throw AuthenticationException
             
-            // TEst
-//            ISubscriptionListener subscriptionListener = subscribeRequest.getSubscriptionListener();
+            // TODO if file not found, throw FileNotFoundException
             
-            try {
-                subscribeRequest.getSubscriptionListener().notifySubscriber(null);
-            } catch (RemoteException e) {
-                // TODO Auto-generated catch block
-                e.printStackTrace();
-            }
-            return true;
+            subscriptionHandler.addSubscription(subscribeRequest);
         }
 
         @Override

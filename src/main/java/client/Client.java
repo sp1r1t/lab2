@@ -16,6 +16,7 @@ import java.security.*;
 
 import javax.crypto.*;
 import javax.crypto.spec.*;
+import javax.naming.AuthenticationException;
 
 import cli.*;
 import shared.IClientRMICommands;
@@ -884,11 +885,16 @@ public class Client {
         @Override
         @Command
         public MessageResponse subscribe(String filename, int numberOfDownloads) throws RemoteException {
-            // TODO username (logged in ?)
+            // TODO add username (logged in ?)
             SubscriptionRequest subscribeRequest = new SubscriptionRequest(null, filename, numberOfDownloads, this);
-            proxyManagementComponent.subscribe(subscribeRequest);
-            // TODO RMI callback
-            return null;
+            try {
+                proxyManagementComponent.subscribe(subscribeRequest);
+            } catch (AuthenticationException e) {
+                return new MessageResponse("Credentials are wrong.");
+            } catch (FileNotFoundException e) {
+                return new MessageResponse("File not found");
+            }
+            return new MessageResponse("Successfully subscribed for file: " + filename);
         }
 
         @Override
@@ -909,11 +915,8 @@ public class Client {
         }
 
         @Override
-        public void notifySubscriber(
-                SubscriptionNotification subscriptionNotification)
-                throws RemoteException {
-            // TODO Auto-generated method stub
-            logger.debug("notification received!");
+        public void notifySubscriber(SubscriptionNotification subscriptionNotification) throws IOException {
+            shell.writeLine(subscriptionNotification.message);
         }
     }
 

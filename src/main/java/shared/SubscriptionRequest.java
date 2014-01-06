@@ -2,6 +2,11 @@ package shared;
 
 import java.io.Serializable;
 
+/**
+ * Contains all data which is required for a subscription request
+ * @author Martin
+ *
+ */
 public class SubscriptionRequest implements Serializable {
 
 
@@ -10,13 +15,13 @@ public class SubscriptionRequest implements Serializable {
      */
     private static final long serialVersionUID = 5600370775943136389L;
     
-    private String filename;
+    private final String filename;
 
-    private int numberOfDownloads;
+    private final int numberOfDownloads;
 
-    private String username;
+    private final String username;
 
-    private ISubscriptionListener subscriptionListener;
+    private final ISubscriptionListener subscriptionListener;
     
     public SubscriptionRequest(String username, String filename, int numberOfDownloads, ISubscriptionListener subscriptionListener) {
         this.username = username;
