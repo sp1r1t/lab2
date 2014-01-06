@@ -351,7 +351,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
         }
     }
 
-    private ArrayList<FileServer> getCurrentFileserver() {  //TODO: download readQuorum
+    private ArrayList<FileServer> getCurrentFileserver(String readWrite) {  //TODO: download readQuorum
         /*
     	// get first online fs
         FileServer lowest = null;
@@ -380,15 +380,28 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
         	return null;  //no fileservers online
         }
         
-        if(upload == false) {
-        	readQuorum = onlineFS.size()/2;
+        if(upload == false && readWrite == "read") {
+        	readQuorum = (int) (onlineFS.size()/2) + onlineFS.size()%2;
+        }
+        
+        if(upload == false && readWrite == "write") {
+        	writeQuorum = (int) (onlineFS.size()/2) + 1;
+        	upload = true;
         }
         
         // search for lowest usage fs
         Collections.sort(onlineFS);
         ArrayList<FileServer> lowestUsage = new ArrayList<FileServer>();
-        for (int i = 0; i < readQuorum; i++) {
-        	lowestUsage.add(onlineFS.get(i));
+        if(readWrite == "read") {
+	        for (int i = 0; i < readQuorum; i++) {
+	        	lowestUsage.add(onlineFS.get(i));
+	        }
+        }
+        
+        if(readWrite == "write") {
+	        for (int i = 0; i < writeQuorum; i++) {
+	        	lowestUsage.add(onlineFS.get(i));
+	        }
         }
         
         return lowestUsage;
@@ -996,18 +1009,17 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             Request inforequest = new InfoRequest(request.getFilename());
             FileServerConnection fscon;
             Object o;
-            ArrayList<FileServer> fsList = getCurrentFileserver();
+            ArrayList<FileServer> fsList = getCurrentFileserver("read");
             if(fsList == null) {
                 return new MessageResponse("No file server available.");
             }
-            
-            for(FileServer fs : fsList) { /* wenn versionsnummer höher als gespeicherte oder versionsnummer gleichgroß und usage kleiner als usage des gespeicherten fs --> ersetzen */
-            	 Request versionrequest = new VersionRequest(request.getFilename());
+            for(FileServer fs : fsList) { /* wenn versionsnummer hoeher als gespeicherte oder versionsnummer gleichgross und usage kleiner als usage des gespeicherten fs --> ersetzen */
+            	Request versionrequest = new VersionRequest(request.getFilename());
                  fscon = new FileServerConnection(fs.getHost(), fs.getTcpPort(), versionrequest);
                  o = fscon.call();
                  if(o instanceof VersionResponse) {
                      VersionResponse response = (VersionResponse) o;
-                     if ((response.getVersion() > versionTemp) || ((response.getVersion() == versionTemp) && fs.getUsage() < usedFS.getUsage())) {
+                     if ((response.getVersion() >= versionTemp) || ((response.getVersion() == versionTemp) && fs.getUsage() < usedFS.getUsage())) {
                     	 versionTemp = response.getVersion();
                     	 usedFS = fs;
                      }
@@ -1019,8 +1031,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                      return null;
                  }
             }
-            	
-            	
+            
             fscon = new FileServerConnection(usedFS.getHost(), usedFS.getTcpPort(), inforequest);
             o = fscon.call();
             if(o instanceof InfoResponse) {
@@ -1085,9 +1096,32 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
         @Override
         public MessageResponse upload(UploadRequest request) throws IOException { // TODO: upload writeQuorum
             FileServerConnection fscon;
-            for(FileServer f : fileservers) {
-                fscon = new FileServerConnection(f.getHost(), f.getTcpPort(),
-                                                 request);
+            int version = 0;
+            ArrayList<FileServer> fsList = getCurrentFileserver("read");
+            if(fsList == null) {
+                return new MessageResponse("No file server available.");
+            }
+            for(FileServer fs : fsList) { /* wenn versionsnummer hoeher als gespeicherte --> ersetzen */
+           	 Request versionrequest = new VersionRequest(request.getFilename());
+                fscon = new FileServerConnection(fs.getHost(), fs.getTcpPort(), versionrequest);
+                Object o = fscon.call();
+                if(o instanceof VersionResponse) {
+                    VersionResponse response = (VersionResponse) o;
+                    if (response.getVersion() > version) {
+                   	 version = response.getVersion();
+                    }
+                } 
+                else if (o instanceof MessageResponse) {
+                    return (MessageResponse) o;
+                } else {
+                    logger.error("Response corrupted.");
+                    return null;
+                }
+           }
+            ArrayList<FileServer> usedFS = getCurrentFileserver("write");
+            UploadRequest newRequest = new UploadRequest(request.getSid(), request.getFilename(), version+1, request.getContent());
+            for(FileServer f : usedFS) {
+                fscon = new FileServerConnection(f.getHost(), f.getTcpPort(), newRequest);
                 Response response = fscon.call();
             }
 
@@ -1096,6 +1130,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             
             // add file to file cache
             fileCache.add(request.getFilename());
+            upload = true;
             return new MessageResponse("success");
         }
 
