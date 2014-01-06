@@ -9,21 +9,21 @@ import java.nio.file.*;
 import java.nio.charset.*;
 import java.net.*;
 import java.security.*;
-import java.security.spec.*;
+
 import javax.crypto.*;
 import javax.crypto.spec.*;
+import javax.naming.AuthenticationException;
 
 import cli.*;
+import shared.IProxyManagementComponent;
+import shared.SubscriptionRequest;
 import util.*;
 import model.*;
-import proxy.*;
 import message.*;
 import message.request.*;
 import message.response.*;
-import model.*;
 
 import org.apache.log4j.*;
-
 import org.bouncycastle.util.encoders.Base64;
 import org.bouncycastle.openssl.*;
 import org.bouncycastle.jce.provider.*;
@@ -62,6 +62,10 @@ public class Proxy {
 
     // cached list of files on the the fileservers
     private Set<String> fileCache;
+    
+    // file history 
+//    private Map<String, Integer> fileDownloadHistoryList;
+    private List<FileDownloadHistoryEntry> fileDownloadHistoryList;
 
     // the proxy shell
     private Shell shell;
@@ -89,6 +93,12 @@ public class Proxy {
 
     // proxy private key
     private PrivateKey privateKey;
+    
+    // proxy private key
+    private PublicKey publicKey;
+    
+    // subscription handler
+    private SubscriptionHandler subscriptionHandler;
 
     //* everything below is read from the config file *//
 
@@ -166,8 +176,7 @@ public class Proxy {
         }
         catch (MissingResourceException x) {
             if(key == name) {
-                logger.fatal("Config " + key + 
-                             ".properties does not exist.");
+                logger.fatal("Config " + key + ".properties does not exist.");
             } else {
                 logger.fatal("Key " + key + " is not defined.");
             }
@@ -179,6 +188,7 @@ public class Proxy {
         fileservers = new ArrayList<FileServer>();
         fsUsage = new HashMap<FileServer, Integer>();
         fileCache = new HashSet<String>();
+        fileDownloadHistoryList = new ArrayList<FileDownloadHistoryEntry>();
 
 
         logger.info(name + " configured, starting services.");
@@ -186,9 +196,10 @@ public class Proxy {
         // read user config
         readUserConfig();
 
-        // read private key
+        // read key pair
         try {
             privateKey = readPrivateKey(privateKeyDir);
+            publicKey = readPublicKey(keyDir + "proxy.pub.pem");
         } catch (IOException ex) {
             logger.fatal("Couldn't read proxys private key.");
             logger.debug(ex.getMessage());
@@ -221,6 +232,16 @@ public class Proxy {
         shell.register(cli);
         logger.info("Starting the shell.");
         Future shellfuture = pool.submit(shell);
+        
+        // Instantiate ProxyManagementHandler 
+        ProxyManagementHandler proxyManagementHandler = new ProxyManagementHandler();  
+        
+        // starting registry
+        RegistryHelper registryHelper = RegistryHelper.getInstance();
+        registryHelper.startRegistry(proxyManagementHandler);
+        
+        // Instantiate SubscriptionHandler
+        subscriptionHandler = new SubscriptionHandler();
 
         System.out.println("Proxy started."); 
 /*
@@ -333,6 +354,32 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
     class ProxyPasswordFinder implements PasswordFinder {
         public char[] getPassword() {
             return "12345".toCharArray(); 
+        }
+    }
+    
+    /**
+     * Adds an entry to the filedownload history or increments existing counter
+     * @param filename
+     */
+    public synchronized void addToDownloadHistoryEntry(String filename) {
+        for (FileDownloadHistoryEntry entry: fileDownloadHistoryList) {
+            if (entry.filename.equals(filename)) {
+                entry.downloadCounter++;
+                return;
+            }
+        }
+        fileDownloadHistoryList.add(new FileDownloadHistoryEntry(filename));
+    }
+    
+    class FileDownloadHistoryEntry implements Comparable<FileDownloadHistoryEntry> {
+        final String filename;
+        Integer downloadCounter = 1;
+        public FileDownloadHistoryEntry(String filename) {
+            this.filename = filename;
+        }
+        @Override
+        public int compareTo(FileDownloadHistoryEntry o) {
+            return downloadCounter.compareTo(o.downloadCounter);
         }
     }
 
@@ -1008,6 +1055,12 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                     new DownloadTicket(user.getName(), filename, checksum,
                                        host,fs.getTcpPort());
                 
+                // notify subscriptionhandler
+                subscriptionHandler.notifyFileDownload(filename);
+                
+                // add to download history
+                addToDownloadHistoryEntry(filename);
+                
                 // send desired response
                 return new DownloadTicketResponse(ticket);
                 
@@ -1039,6 +1092,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                 logger.debug("Logging out user " + user.getName() +
                              ".");
                 user.logout();
+                subscriptionHandler.removeSubscription(user.getName());
                 user = null;
             }
             return new MessageResponse("Successfully logged out.");
@@ -1109,6 +1163,9 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
 
             // clean up
             pool.shutdownNow();
+            
+            // clear subscriptions
+            subscriptionHandler.removeAllSubscriptions();
 
             DatagramSocket aliveSocket = keepAliveListener.getAliveSocket();
             if(aliveSocket != null) {
@@ -1141,6 +1198,92 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
         @Command
         public void muh() throws IOException {
             System.out.println("muuuhhh");
+        }
+
+    }
+    
+    public class ProxyManagementHandler implements IProxyManagementComponent {
+
+        @Override
+        public Integer getReadQuorum() {
+            // TODO Auto-generated method stub
+            logger.debug("getReadQuorum");
+            return -1;
+        }
+
+        @Override
+        public Integer getWriteQuorum() {
+            // TODO Auto-generated method stub
+            logger.debug("getWriteQuorum");
+            return -1;
+        }
+
+        @Override
+        public Map<String, Integer> getTopThree() {
+            
+            Collections.sort(fileDownloadHistoryList);
+            Map<String, Integer> resultMap = new HashMap<String, Integer>();
+            
+//            addToDownloadHistoryEntry("asd");
+//            addToDownloadHistoryEntry("asd");
+//            addToDownloadHistoryEntry("asd");
+//            addToDownloadHistoryEntry("asd");
+//            addToDownloadHistoryEntry("asd2");
+//            addToDownloadHistoryEntry("asd2");
+//            addToDownloadHistoryEntry("asd3");
+//            addToDownloadHistoryEntry("asd3");
+//            addToDownloadHistoryEntry("asd4");
+            
+//            for (int i = fileDownloadHistoryList.size() - 1; i > -1; i--) {
+//                FileDownloadHistoryEntry fileDownloadHistoryEntry = fileDownloadHistoryList.get(i);
+//                resultMap.put(fileDownloadHistoryEntry.filename, fileDownloadHistoryEntry.downloadCounter);
+//            }
+            
+            // TODO adjust order
+            
+            for (int i = 0; i < fileDownloadHistoryList.size() && i < 3; i++) {
+                FileDownloadHistoryEntry fileDownloadHistoryEntry = fileDownloadHistoryList.get(i);
+                resultMap.put(fileDownloadHistoryEntry.filename, fileDownloadHistoryEntry.downloadCounter);
+            }
+            
+            return resultMap;
+        }
+
+        @Override
+        public void subscribe(SubscriptionRequest subscribeRequest) throws AuthenticationException, FileNotFoundException {
+            // if not logged in, throw AuthenticationException
+            boolean isUserLoggedIn = false;
+            for (User u: users) {
+                if (subscribeRequest.getUsername().equals(u.getName())
+                        && u.isLoggedIn())
+                    isUserLoggedIn = true;
+            }
+            if (!isUserLoggedIn) 
+                throw new AuthenticationException("User is not logged in");
+            
+            // if file not found, throw FileNotFoundException
+            if (!fileCache.contains(subscribeRequest.getFilename()))
+                throw new FileNotFoundException("File not found");
+            
+            subscriptionHandler.addSubscription(subscribeRequest);
+        }
+
+        @Override
+        public PublicKey getPublicKey() {
+            return publicKey;
+        }
+
+        @Override
+        public Boolean sendPublicKey(String userName, PublicKey publicKey) {
+            try {
+                PEMWriter pemWriter = new PEMWriter(new FileWriter(keyDir + userName + ".pub.pem"));
+                pemWriter.writeObject(publicKey);
+                pemWriter.close();
+            } catch (IOException e) {
+                logger.error("Failed saving public key", e);
+                return false;
+            } 
+            return true;
         }
     }
 }

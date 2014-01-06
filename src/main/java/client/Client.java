@@ -1,29 +1,38 @@
 package client;
 
 import java.util.*;
-import java.util.regex.*;
+import java.util.Map.Entry;
 import java.util.concurrent.*;
 import java.io.*;
-import java.nio.*;
 import java.nio.file.*;
 import java.nio.charset.*;
 import java.net.*;
+import java.rmi.NotBoundException;
+import java.rmi.RemoteException;
+import java.rmi.registry.LocateRegistry;
+import java.rmi.registry.Registry;
+import java.rmi.server.UnicastRemoteObject;
 import java.security.*;
-import java.security.spec.*;
+
 import javax.crypto.*;
 import javax.crypto.spec.*;
+import javax.naming.AuthenticationException;
 
 import cli.*;
+import shared.IClientRMICommands;
+import shared.IProxyManagementComponent;
+import shared.ISubscriptionListener;
+import shared.PublicKeyRequest;
+import shared.PublicKeyResponse;
+import shared.SubscriptionRequest;
+import shared.SubscriptionNotification;
 import util.*;
-import client.*;
 import message.*;
 import message.request.*;
 import message.response.*;
 import model.*;
 
 import org.apache.log4j.*;
-//import org.apache.commons.codec.binary.Hex;
-
 import org.bouncycastle.util.encoders.Base64;
 import org.bouncycastle.openssl.*;
 import org.bouncycastle.jce.provider.*;
@@ -96,6 +105,9 @@ public class Client {
 
     // session id
     private UUID sid;
+    
+    // user name
+    private String userName = "";
 
     // user pw
     private String pw;
@@ -105,6 +117,9 @@ public class Client {
 
     // communication channel
     private Channel channel;
+
+    // RMI Interface (Proxy stub)
+    private IProxyManagementComponent proxyManagementComponent;
     
     /**
      * main function
@@ -157,19 +172,24 @@ public class Client {
             }
             System.exit(1);
         }
+        
+        // read rmi config
+        Config rmiConfig = new Config("mc");
+        String proxyHost = rmiConfig.getString("proxy.host");
+        int proxyRmiPort = rmiConfig.getInt("proxy.rmi.port");
+        String bindingName = rmiConfig.getString("binding.name");
+        
+        // init registry
+        try {
+            Registry registry = LocateRegistry.getRegistry(proxyHost, proxyRmiPort);
+            proxyManagementComponent = (IProxyManagementComponent) registry.lookup(bindingName); 
+        } catch (RemoteException e) {
+            logger.error("Failed locating registry", e);
+        } catch (NotBoundException e) {
+            logger.error("Failed looking up binding name", e);
+        }
 
         // read proxy pub key
-/*        try {
-          String proxyPubKeyString = readKey("proxy", "public");
-          proxyPubKey = convertKeyToKeyObject(proxyPubKeyString);
-          logger.debug("key: " + proxyPubKey.getEncoded());
-          } catch (IOException ex) {
-          logger.fatal("Couldn't read proxys public key.");
-          System.exit(1);
-          } catch (Exception ex) {
-          ex.printStackTrace();
-          }
-*/
         try {
             proxyPubKey = readPublicKey(proxyPubKeyDir);
         } catch (IOException  ex) {
@@ -265,11 +285,16 @@ public class Client {
         }
     }
 
-    class ClientCli implements IClientCli {
+    class ClientCli implements IClientCli, IClientRMICommands, ISubscriptionListener {
         private Logger logger;
 
         public ClientCli() {
             logger = Logger.getLogger("Client.ClientCli");
+            try {
+                UnicastRemoteObject.exportObject(this, 0);
+            } catch (RemoteException e) {
+                logger.error("Failed exporting remote object", e);
+            }
         }
 
         @Command
@@ -280,6 +305,7 @@ public class Client {
  
         @Command
         public Response login(String username, String password) throws IOException {
+            userName = username;
             pw = password;
             logger.debug("started pub/priv key login");
             logger.debug("username is " + username);
@@ -823,6 +849,78 @@ public class Client {
             } catch (ClassNotFoundException x) {
                 logger.info("Class not found.");
             }
+        }
+
+        @Override
+        @Command
+        public MessageResponse readQuorum() throws RemoteException {
+            return new MessageResponse("Read-Quorum is set to " + proxyManagementComponent.getReadQuorum() + ".");
+        }
+
+        @Override
+        @Command
+        public MessageResponse writeQuorum() throws RemoteException {
+            return new MessageResponse("Write-Quorum is set to " + proxyManagementComponent.getWriteQuorum() + ".");
+        }
+
+        @Override
+        @Command
+        public MessageResponse topThreeDownloads() throws RemoteException {
+            Map<String, Integer> list = proxyManagementComponent.getTopThree();
+            String message = "Top Three Downloads:";
+            int index = 1;
+            for (Entry<String, Integer> e: list.entrySet()) {
+                message += "\n" + index++ + ". " + e.getKey() + " " + e.getValue();
+            }
+            return new MessageResponse(message);
+        }
+
+        @Override
+        @Command
+        public MessageResponse subscribe(String filename, int numberOfDownloads) throws RemoteException {
+            SubscriptionRequest subscribeRequest = new SubscriptionRequest(userName, filename, numberOfDownloads, this);
+            try {
+                proxyManagementComponent.subscribe(subscribeRequest);
+            } catch (AuthenticationException e) {
+                return new MessageResponse("Credentials are wrong.");
+            } catch (FileNotFoundException e) {
+                return new MessageResponse("File not found");
+            }
+            return new MessageResponse("Successfully subscribed for file: " + filename);
+        }
+
+        @Override
+        @Command
+        public MessageResponse getProxyPublicKey() throws RemoteException {
+            PublicKey proxyPublicKey2 = proxyManagementComponent.getPublicKey();
+            try {
+                // store public key from proxy
+                PEMWriter pemWriter = new PEMWriter(new FileWriter(proxyPubKeyDir));
+                pemWriter.writeObject(proxyPublicKey2);
+                pemWriter.close();
+            } catch (IOException e) {
+                logger.error("Failed saving public key", e);
+            } 
+            return new MessageResponse("Successfully received public key of Proxy.");
+        }
+
+        @Override
+        @Command
+        public MessageResponse setUserPublicKey(String userName) throws RemoteException {
+            try {
+                PublicKey readPublicKey = readPublicKey(keyDir + userName + ".pub.pem");
+                boolean success = proxyManagementComponent.sendPublicKey(userName, readPublicKey);
+                if (!success)
+                    return new MessageResponse("Transmission of public key was unsuccessful");
+            } catch (IOException e) {
+                return new MessageResponse("No such user found: " + userName);
+            }
+            return new MessageResponse("Successfully transmitted public key of user: " + userName + ".");
+        }
+
+        @Override
+        public void notifySubscriber(SubscriptionNotification subscriptionNotification) throws IOException {
+            shell.writeLine(subscriptionNotification.message);
         }
     }
 
