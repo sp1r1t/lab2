@@ -1,8 +1,10 @@
 package shared;
 
 import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.rmi.Remote;
 import java.rmi.RemoteException;
+import java.security.PublicKey;
 import java.util.Map;
 
 import javax.naming.AuthenticationException;
@@ -49,15 +51,17 @@ public interface IProxyManagementComponent extends Remote {
      * @return
      * @throws RemoteException
      */
-    PublicKeyResponse getPublicKey() throws RemoteException;
+    PublicKey getPublicKey() throws RemoteException;
     
     /**
      * With this command the user can exchange it's own public key with the Proxy. Therefore additionally to the name, the client should also send the public key for the given name. The Proxy stores the received key in the key folder (given keys.dir property).
-     * @param publicKeyRequest
+     * @param userName
+     * @param publicKey TODO
      * @return
      * @throws RemoteException
+     * @throws IOException 
      */
-    Boolean sendPublicKey(PublicKeyRequest publicKeyRequest) throws RemoteException;
+    Boolean sendPublicKey(String userName, PublicKey publicKey) throws RemoteException;
     
     
     

@@ -105,6 +105,9 @@ public class Client {
 
     // session id
     private UUID sid;
+    
+    // user name
+    private String userName = "";
 
     // user pw
     private String pw;
@@ -302,6 +305,7 @@ public class Client {
  
         @Command
         public Response login(String username, String password) throws IOException {
+            userName = username;
             pw = password;
             logger.debug("started pub/priv key login");
             logger.debug("username is " + username);
@@ -865,7 +869,7 @@ public class Client {
             Map<String, Integer> list = proxyManagementComponent.getTopThree();
             String message = "Top Three Downloads:";
             int index = 1;
-            for (Entry e: list.entrySet()) {
+            for (Entry<String, Integer> e: list.entrySet()) {
                 message += "\n" + index++ + ". " + e.getKey() + " " + e.getValue();
             }
             return new MessageResponse(message);
@@ -874,8 +878,7 @@ public class Client {
         @Override
         @Command
         public MessageResponse subscribe(String filename, int numberOfDownloads) throws RemoteException {
-            // TODO add username (logged in ?)
-            SubscriptionRequest subscribeRequest = new SubscriptionRequest(null, filename, numberOfDownloads, this);
+            SubscriptionRequest subscribeRequest = new SubscriptionRequest(userName, filename, numberOfDownloads, this);
             try {
                 proxyManagementComponent.subscribe(subscribeRequest);
             } catch (AuthenticationException e) {
@@ -889,17 +892,29 @@ public class Client {
         @Override
         @Command
         public MessageResponse getProxyPublicKey() throws RemoteException {
-            PublicKeyResponse publicKeyResponse = proxyManagementComponent.getPublicKey();
-            // TODO read and store public key
+            PublicKey proxyPublicKey2 = proxyManagementComponent.getPublicKey();
+            try {
+                // store public key from proxy
+                PEMWriter pemWriter = new PEMWriter(new FileWriter(proxyPubKeyDir));
+                pemWriter.writeObject(proxyPublicKey2);
+                pemWriter.close();
+            } catch (IOException e) {
+                logger.error("Failed saving public key", e);
+            } 
             return new MessageResponse("Successfully received public key of Proxy.");
         }
 
         @Override
         @Command
         public MessageResponse setUserPublicKey(String userName) throws RemoteException {
-            // TODO initialize object to be transmitted (public key of .... )
-            PublicKeyRequest publicKeyRequest = null;
-            proxyManagementComponent.sendPublicKey(publicKeyRequest);
+            try {
+                PublicKey readPublicKey = readPublicKey(keyDir + userName + ".pub.pem");
+                boolean success = proxyManagementComponent.sendPublicKey(userName, readPublicKey);
+                if (!success)
+                    return new MessageResponse("Transmission of public key was unsuccessful");
+            } catch (IOException e) {
+                return new MessageResponse("No such user found: " + userName);
+            }
             return new MessageResponse("Successfully transmitted public key of user: " + userName + ".");
         }
 
