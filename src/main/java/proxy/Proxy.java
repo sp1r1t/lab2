@@ -1047,11 +1047,11 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
     }
 
     class UpdateFileCache implements Runnable {
-        Logger logger;
+        //Logger logger;
         FileServer fs;
 
         public UpdateFileCache(FileServer fs) {
-            logger = Logger.getLogger("Proxy.UpdateFileCache");
+            //logger = Logger.getLogger("Proxy.UpdateFileCache");
             this.fs = fs;
         }
 
@@ -1074,10 +1074,10 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
     }
 
     class ProxyCli implements IProxyCli {
-        private Logger logger;
+        //private Logger logger;
 
         public ProxyCli() {
-            logger = Logger.getLogger("Proxy.ProxyCli");
+            //logger = Logger.getLogger("Proxy.ProxyCli");
         }
 
         @Command
