@@ -1176,10 +1176,14 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             for(FileServer f : usedFS) {
                 fscon = new FileServerConnection(f.getHost(), f.getTcpPort(), newRequest);
                 Response response = fscon.call();
+                //increase usage
+                fsUsage.put(f, fsUsage.get(f)+newRequest.getContent().length);
             }
 
             // increase user credits
             user.setCredits(user.getCredits() + 2 * request.getContent().length);
+            
+
             
             // add file to file cache
             fileCache.add(request.getFilename());
