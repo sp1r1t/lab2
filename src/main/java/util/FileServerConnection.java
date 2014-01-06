@@ -59,8 +59,12 @@ public class FileServerConnection implements Callable {
             x.printStackTrace();
         } catch (ClassNotFoundException x) {
             logger.info("Class not found.");
+        } finally {
+            try {
+                socket.close();
+            } catch (IOException  ex) {
+            }
         }
-
         logger.debug("Returning.");
         return response;
     }

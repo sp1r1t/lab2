@@ -91,6 +91,9 @@ public class Proxy {
     // proxy private key
     private PrivateKey privateKey;
     
+    // proxy private key
+    private PublicKey publicKey;
+    
     // subscription handler
     private SubscriptionHandler subscriptionHandler;
 
@@ -170,8 +173,7 @@ public class Proxy {
         }
         catch (MissingResourceException x) {
             if(key == name) {
-                logger.fatal("Config " + key + 
-                             ".properties does not exist.");
+                logger.fatal("Config " + key + ".properties does not exist.");
             } else {
                 logger.fatal("Key " + key + " is not defined.");
             }
@@ -190,9 +192,10 @@ public class Proxy {
         // read user config
         readUserConfig();
 
-        // read private key
+        // read key pair
         try {
             privateKey = readPrivateKey(privateKeyDir);
+            publicKey = readPublicKey(keyDir + "proxy.pub.pem");
         } catch (IOException ex) {
             logger.fatal("Couldn't read proxys private key.");
             logger.debug(ex.getMessage());
