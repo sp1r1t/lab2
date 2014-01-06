@@ -381,11 +381,11 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
         }
         
         if(upload == false && readWrite == "read") {
-        	readQuorum = onlineFS.size()/2;
+        	readQuorum = (int) (onlineFS.size()/2) + onlineFS.size()%2;
         }
         
         if(upload == false && readWrite == "write") {
-        	writeQuorum = (int) Math.floor(onlineFS.size()/2) + 1;
+        	writeQuorum = (int) (onlineFS.size()/2) + 1;
         	upload = true;
         }
         
@@ -1013,14 +1013,13 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             if(fsList == null) {
                 return new MessageResponse("No file server available.");
             }
-            
             for(FileServer fs : fsList) { /* wenn versionsnummer hoeher als gespeicherte oder versionsnummer gleichgross und usage kleiner als usage des gespeicherten fs --> ersetzen */
-            	 Request versionrequest = new VersionRequest(request.getFilename());
+            	Request versionrequest = new VersionRequest(request.getFilename());
                  fscon = new FileServerConnection(fs.getHost(), fs.getTcpPort(), versionrequest);
                  o = fscon.call();
                  if(o instanceof VersionResponse) {
                      VersionResponse response = (VersionResponse) o;
-                     if ((response.getVersion() > versionTemp) || ((response.getVersion() == versionTemp) && fs.getUsage() < usedFS.getUsage())) {
+                     if ((response.getVersion() >= versionTemp) || ((response.getVersion() == versionTemp) && fs.getUsage() < usedFS.getUsage())) {
                     	 versionTemp = response.getVersion();
                     	 usedFS = fs;
                      }
@@ -1032,8 +1031,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                      return null;
                  }
             }
-            	
-            	
+            
             fscon = new FileServerConnection(usedFS.getHost(), usedFS.getTcpPort(), inforequest);
             o = fscon.call();
             if(o instanceof InfoResponse) {
@@ -1123,8 +1121,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             ArrayList<FileServer> usedFS = getCurrentFileserver("write");
             UploadRequest newRequest = new UploadRequest(request.getSid(), request.getFilename(), version+1, request.getContent());
             for(FileServer f : usedFS) {
-                fscon = new FileServerConnection(f.getHost(), f.getTcpPort(),
-                                                 newRequest);
+                fscon = new FileServerConnection(f.getHost(), f.getTcpPort(), newRequest);
                 Response response = fscon.call();
             }
 
