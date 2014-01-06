@@ -187,17 +187,6 @@ public class Client {
         }
 
         // read proxy pub key
-/*        try {
-          String proxyPubKeyString = readKey("proxy", "public");
-          proxyPubKey = convertKeyToKeyObject(proxyPubKeyString);
-          logger.debug("key: " + proxyPubKey.getEncoded());
-          } catch (IOException ex) {
-          logger.fatal("Couldn't read proxys public key.");
-          System.exit(1);
-          } catch (Exception ex) {
-          ex.printStackTrace();
-          }
-*/
         try {
             proxyPubKey = readPublicKey(proxyPubKeyDir);
         } catch (IOException  ex) {
