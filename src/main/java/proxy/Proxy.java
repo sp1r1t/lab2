@@ -18,7 +18,7 @@ import cli.*;
 import shared.IProxyManagementComponent;
 import shared.PublicKeyRequest;
 import shared.PublicKeyResponse;
-import shared.SubscribeRequest;
+import shared.SubscriptionRequest;
 import util.*;
 import model.*;
 import message.*;
@@ -1178,9 +1178,19 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
         }
 
         @Override
-        public Boolean subscribe(SubscribeRequest subscribeRequest) {
-            // TODO Auto-generated method stub
-            logger.debug("subscribe");
+        public Boolean subscribe(SubscriptionRequest subscribeRequest) {
+            logger.debug("subscribe:" + subscribeRequest.getUsername() + " " + subscribeRequest.getFilename() +
+                    " " + subscribeRequest.getNumberOfDownloads());
+            
+            // TEst
+//            ISubscriptionListener subscriptionListener = subscribeRequest.getSubscriptionListener();
+            
+            try {
+                subscribeRequest.getSubscriptionListener().notifySubscriber(null);
+            } catch (RemoteException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
             return true;
         }
 

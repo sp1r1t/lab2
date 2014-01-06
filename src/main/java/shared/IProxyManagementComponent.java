@@ -12,7 +12,7 @@ public interface IProxyManagementComponent extends Remote {
     
     Map<String, Integer> getTopThree() throws RemoteException;
     
-    Boolean subscribe(SubscribeRequest subscribeRequest) throws RemoteException;
+    Boolean subscribe(SubscriptionRequest subscribeRequest) throws RemoteException;
     
     PublicKeyResponse getPublicKey() throws RemoteException;
     

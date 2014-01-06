@@ -11,6 +11,7 @@ import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
+import java.rmi.server.UnicastRemoteObject;
 import java.security.*;
 
 import javax.crypto.*;
@@ -19,8 +20,11 @@ import javax.crypto.spec.*;
 import cli.*;
 import shared.IClientRMICommands;
 import shared.IProxyManagementComponent;
+import shared.ISubscriptionListener;
 import shared.PublicKeyRequest;
 import shared.PublicKeyResponse;
+import shared.SubscriptionRequest;
+import shared.SubscriptionNotification;
 import util.*;
 import message.*;
 import message.request.*;
@@ -288,11 +292,16 @@ public class Client {
         }
     }
 
-    class ClientCli implements IClientCli, IClientRMICommands {
+    class ClientCli implements IClientCli, IClientRMICommands, ISubscriptionListener {
         private Logger logger;
 
         public ClientCli() {
             logger = Logger.getLogger("Client.ClientCli");
+            try {
+                UnicastRemoteObject.exportObject(this, 0);
+            } catch (RemoteException e) {
+                logger.error("Failed exporting remote object", e);
+            }
         }
 
         @Command
@@ -874,8 +883,10 @@ public class Client {
 
         @Override
         @Command
-        public MessageResponse subscribe(String filename, int numberOfDownloads) {
-            // TODO Auto-generated method stub
+        public MessageResponse subscribe(String filename, int numberOfDownloads) throws RemoteException {
+            // TODO username (logged in ?)
+            SubscriptionRequest subscribeRequest = new SubscriptionRequest(null, filename, numberOfDownloads, this);
+            proxyManagementComponent.subscribe(subscribeRequest);
             // TODO RMI callback
             return null;
         }
@@ -895,6 +906,14 @@ public class Client {
             PublicKeyRequest publicKeyRequest = null;
             proxyManagementComponent.sendPublicKey(publicKeyRequest);
             return new MessageResponse("Successfully transmitted public key of user: " + userName + ".");
+        }
+
+        @Override
+        public void notifySubscriber(
+                SubscriptionNotification subscriptionNotification)
+                throws RemoteException {
+            // TODO Auto-generated method stub
+            logger.debug("notification received!");
         }
     }
 
