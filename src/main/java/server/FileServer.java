@@ -520,12 +520,13 @@ public class FileServer {
                         fw.write(new String(content), 0, content.length);
                         bw.close();
                         // update version
-                        Integer v = version.get(filename);
+                        /*Integer v = version.get(filename);
                         if (v == null) {
                             version.put(filename,1);
                         } else {
                             version.put(filename,++v);
-                        }
+                        }*/
+                        version.put(filename, request.getVersion());
 
                     } catch (IOException x) {
                         logger.debug("Couldn't write file.");
