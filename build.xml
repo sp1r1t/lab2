@@ -43,6 +43,10 @@
 		</junit>
 	</target>
 
+	<target name="mttest" depends="compile" description="Run Multi Threading Test.">
+		<java classname="test.MTTest" fork="true" classpathref="project.classpath" />
+	</target>
+
 	<target name="run-proxy" depends="compile" description="Run proxy.">
 		<java classname="proxy.Proxy" fork="true" classpathref="project.classpath" />
 	</target>

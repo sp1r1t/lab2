@@ -44,7 +44,7 @@ public class Client {
             // set up logger
             logger = Logger.getLogger("Client");
             BasicConfigurator.configure();
-            logger.setLevel(Level.DEBUG);
+            logger.setLevel(Level.FATAL);
             logger.debug("Logger is set up.");
         }
 
@@ -174,6 +174,7 @@ public class Client {
             proxyPubKey = readPublicKey(proxyPubKeyDir);
         } catch (IOException  ex) {
             logger.fatal("Couldn't read proxys public key.");
+            //ex.printStackTrace();
             System.exit(1);
         }
 
@@ -225,13 +226,16 @@ public class Client {
         //logger.info("Closing main.");
     }
 
-    private PublicKey readPublicKey(String name) throws IOException {
+    private synchronized PublicKey readPublicKey(String name) throws IOException {
+        System.out.println("enter"); 
         Charset charset = Charset.forName("UTF-8");
         Path file = Paths.get(name);
         BufferedReader reader = Files.newBufferedReader(file,charset);
         PEMReader parser = new PEMReader(reader);
         Object o = parser.readObject();
+        parser.close();
         //logger.debug(o.getClass()); 
+        System.out.println("leave"); 
         if (o instanceof JCERSAPublicKey) {
             return (JCERSAPublicKey) o;
         } else {
@@ -240,7 +244,7 @@ public class Client {
         }
     }
 
-    private PrivateKey readPrivateKey(String name) throws IOException {
+    private synchronized PrivateKey readPrivateKey(String name) throws IOException {
         Charset charset = Charset.forName("UTF-8");
         Path file = Paths.get(name);
         BufferedReader reader = Files.newBufferedReader(file,charset);

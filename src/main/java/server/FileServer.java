@@ -37,7 +37,7 @@ public class FileServer {
         // set up logger
         logger = Logger.getLogger("FileServer");
         BasicConfigurator.configure();
-        logger.setLevel(Level.INFO);
+        logger.setLevel(Level.FATAL);
         logger.debug("Logger is set up.");
     }
 

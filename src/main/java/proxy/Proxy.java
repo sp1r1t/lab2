@@ -46,7 +46,7 @@ public class Proxy {
         {
             // set up logger
             logger = Logger.getLogger("Proxy");
-            logger.setLevel(Level.DEBUG);
+            logger.setLevel(Level.FATAL);
             BasicConfigurator.configure();
             logger.debug("Logger is set up.");
         }
