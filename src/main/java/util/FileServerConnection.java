@@ -1,10 +1,12 @@
 package util;
 
-import message.Response;
-import message.Request;
+import message.*;
+import message.response.*;
+import message.request.*;
 
 import java.util.concurrent.Callable;
-
+import java.security.*;
+import javax.crypto.*;
 import java.net.*;
 
 import java.io.IOException;
@@ -20,13 +22,24 @@ public class FileServerConnection implements Callable {
     private String host;
     private Integer port;
     private Request request;
+    private Key hmacKey = null;
 
     public FileServerConnection(String host, Integer port, Request request) {
         logger = Logger.getLogger(FileServerConnection.class);
-        logger.setLevel(Level.toLevel("FATAL"));
+        logger.setLevel(Level.toLevel("DEBUG"));
         this.host = host;
         this.port = port;
         this.request = request;
+    }
+
+    public FileServerConnection(String host, Integer port, Request request,
+        Key hmacKey) {
+        logger = Logger.getLogger(FileServerConnection.class);
+        logger.setLevel(Level.toLevel("DEBUG"));
+        this.host = host;
+        this.port = port;
+        this.request = request;
+        this.hmacKey = hmacKey;
     }
 
     public Response call() {
@@ -34,6 +47,12 @@ public class FileServerConnection implements Callable {
         ObjectOutputStream oos;
         ObjectInputStream ois;
         Response response = null;
+
+        if (hmacKey != null) {
+            logger.debug("Packing hmac request for: " + request.getClass() + "."); 
+            request = Cryptopus.packHmac(request, hmacKey);
+        }
+
         try {
             logger.debug("Connectiong to " + host + ":" + port+ ".");
             socket = new Socket(host, port);
@@ -46,11 +65,23 @@ public class FileServerConnection implements Callable {
 
             logger.debug("Reading request from fs.");
             Object o = ois.readObject();
-            if(o instanceof Response) {
+
+            if(o != null) {
                 logger.debug("Got Response.");
-                response = (Response) o;
+                // check for hmac
+                if (o instanceof HmacResponse) {
+                    HmacResponse hresp = (HmacResponse) o;
+                    logger.debug("Unpacking hmac response."); 
+                    response = Cryptopus.unpackHmac(hresp, hmacKey);
+                }
+                else if (o instanceof Response) {
+                    response = (Response) o;
+                }
+                else {
+                    logger.warn("Response corrupted.");
+                }
             } else {
-                logger.warn("Response corrupted.");
+                logger.warn("Response corrupted (== null).");
             }
         } catch(UnknownHostException x) {
             logger.info("Host not known.");

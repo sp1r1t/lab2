@@ -90,6 +90,9 @@ public class Proxy {
     // proxy private key
     private PrivateKey privateKey;
 
+    // hmac key
+    private Key hmacKey;
+
     //* everything below is read from the config file *//
 
     // time interval after which a fileserver is set offline
@@ -109,6 +112,9 @@ public class Proxy {
 
     // proxy priv key dir
     private String privateKeyDir;
+
+    // hmac dir for fs com
+    private String hmacKeyDir;
 
     /**
      * main function
@@ -163,6 +169,8 @@ public class Proxy {
             keyDir = config.getString(key) + "/";
             key = "key";
             privateKeyDir = config.getString(key);
+            key = "hmac.key";
+            hmacKeyDir = config.getString(key);
         }
         catch (MissingResourceException x) {
             if(key == name) {
@@ -196,6 +204,10 @@ public class Proxy {
         } catch (Exception ex) {
             ex.printStackTrace();
         }
+
+        // read hmac key
+        hmacKey = readKey(hmacKeyDir);
+        //logger.debug("hmackey: " + new String(hmacKey.getEncoded())); 
 
         // create thread pool
         pool = Executors.newFixedThreadPool(30);
@@ -234,7 +246,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
 }
 */
         
-        logger.info("Closing main");
+        //logger.info("Closing main");
     }
 
     public IProxyCli getCli() {
@@ -298,6 +310,17 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             return 1;
         }
         return 0;
+    }
+
+    private Key readKey(String name) throws IOException {
+        Charset charset = Charset.forName("UTF-8");
+        Path file = Paths.get(name);
+        BufferedReader reader = Files.newBufferedReader(file,charset);
+        String strkey = "";
+        while (reader.ready()) {
+            strkey += reader.readLine();
+        }
+        return new SecretKeySpec(strkey.getBytes(), "HmacSHA256");
     }
 
     private PublicKey readPublicKey(String name) throws IOException {
@@ -407,6 +430,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                         try {
                             aliveSocket.receive(packet);
                             String data = new String(packet.getData()).trim();
+                            data = data.substring(7);
                             Integer tcpPort = Integer.valueOf(data);
                             Integer port = packet.getPort();
                             String host = packet.getAddress().getHostAddress();
@@ -549,6 +573,9 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                     Object o = channel.read();
                     
                     // SECURE REQUEST
+                    // this is just used for the secure login, afterwards
+                    // the channel has already extracted the real request at
+                    // this point.
                     if(o instanceof SecureRequest) {
                         logger.debug("Got secure request.");
                         SecureRequest request = (SecureRequest) o;
@@ -565,7 +592,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                         }
                     }
 
-                    // LOGIN
+                    // PW LOGIN
                     if(o instanceof LoginRequest) {
                         logger.debug("Got login request.");
                         LoginRequest request = (LoginRequest) o;
@@ -712,6 +739,12 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
         }                
         
         private Response secureLogin(SecureLoginRequest request) {
+            // client is logged in with a user
+            if(user != null) {
+                return new LoginResponse(LoginResponse.Type.IS_LOGGED_IN);
+            } 
+
+
             Response failedResp = new MessageResponse("Could not log in.");
             SecureLoginRequest req = request;
             //-- MESSAGE 1 --//            
@@ -721,6 +754,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
 
             // get user pub key
             String username = req.getUsername();
+
             PublicKey userPubKey;
             try {
                 userPubKey = readPublicKey(keyDir + username + ".pub.pem");
@@ -955,7 +989,8 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             }
 
             FileServerConnection fscon = new 
-                FileServerConnection(fs.getHost(), fs.getTcpPort(), inforequest);
+                FileServerConnection(fs.getHost(), fs.getTcpPort(), inforequest,
+                                     hmacKey);
             Object o = fscon.call();
             if(o instanceof InfoResponse) {
                 InfoResponse response = (InfoResponse) o;
@@ -973,7 +1008,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             // get file version
             Request versionrequest = new VersionRequest(request.getFilename());
             fscon = new FileServerConnection(fs.getHost(), fs.getTcpPort(), 
-                                             versionrequest);
+                                             versionrequest, hmacKey);
             o = fscon.call();
             if(o instanceof VersionResponse) {
                 VersionResponse response = (VersionResponse) o;
@@ -1021,7 +1056,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             FileServerConnection fscon;
             for(FileServer f : fileservers) {
                 fscon = new FileServerConnection(f.getHost(), f.getTcpPort(),
-                                                 request);
+                                                 request, hmacKey);
                 Response response = fscon.call();
             }
 
@@ -1060,7 +1095,7 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                          fs.getHost() + ":" + fs.getTcpPort() + ".");
             Request request = new ListRequest(null);
             FileServerConnection fscon = new FileServerConnection
-                (fs.getHost(), fs.getTcpPort(), request);
+                (fs.getHost(), fs.getTcpPort(), request, hmacKey);
             
             Object o = fscon.call();
             if(o instanceof ListResponse) {
