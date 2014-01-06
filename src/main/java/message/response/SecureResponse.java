@@ -3,14 +3,14 @@ package message.response;
 import message.Response;
 
 /**
- * 
- * <p/>
- * <b>Request</b>:<br/>
- * 
- * <b>Response:</b><br/>
- * 
- * 
- */
+*
+* <p/>
+* <b>Request</b>:<br/>
+*
+* <b>Response:</b><br/>
+*
+*
+*/
 public class SecureResponse implements Response {
     private static final long serialVersionUID = 8589241886679930421L;
 

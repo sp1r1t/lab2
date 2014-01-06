@@ -6,7 +6,7 @@ import java.util.Calendar;
 import org.apache.log4j.Logger;
 import org.apache.log4j.BasicConfigurator;
 
-class FileServer {
+class FileServer implements Comparable<FileServer> {
     private Logger logger;
 
     private String host;
@@ -61,6 +61,14 @@ class FileServer {
 
     public void setUsage(long usage) {
         this.usage = usage;
+    }
+    
+    public int compareTo(FileServer fs) {
+    	if(usage - fs.getUsage() > Math.pow(2, 32)) {
+    		logger.error("Usage Overflow");
+    	}
+    	
+    	return (int)(usage - fs.getUsage());
     }
 
     public void setLastAlive(Date lastAlive) {
