@@ -4,4 +4,4 @@
 /reports
 .project
 .classpath
-.settings*
+.settings
