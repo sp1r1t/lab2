@@ -64,9 +64,6 @@ public class Proxy {
     // a list of all fileservers
     private ArrayList<FileServer> fileservers;
 
-    // file server usage
-    private Map<FileServer, Integer> fsUsage;
-
     // cached list of files on the the fileservers
     private Set<String> fileCache;
     
@@ -193,7 +190,6 @@ public class Proxy {
         // create lists
         users = new ArrayList<User>();
         fileservers = new ArrayList<FileServer>();
-        fsUsage = new HashMap<FileServer, Integer>();
         fileCache = new HashSet<String>();
         fileDownloadHistoryList = new ArrayList<FileDownloadHistoryEntry>();
 
@@ -554,7 +550,6 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
                          tcpPort + ".");
             FileServer fs = new FileServer(host, port, tcpPort);
             fileservers.add(fs);
-            fsUsage.put(fs,0);
             pool.submit(new UpdateFileCache(fs));
             return;
         }
@@ -1176,8 +1171,8 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             for(FileServer f : usedFS) {
                 fscon = new FileServerConnection(f.getHost(), f.getTcpPort(), newRequest);
                 Response response = fscon.call();
-                //increase usage
-                fsUsage.put(f, fsUsage.get(f)+newRequest.getContent().length);
+                // increase fs usage
+                f.setUsage(f.getUsage() + newRequest.getContent().length);
             }
 
             // increase user credits
