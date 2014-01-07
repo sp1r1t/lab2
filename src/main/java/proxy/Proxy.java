@@ -68,8 +68,10 @@ public class Proxy {
     private Set<String> fileCache;
     
     // file history 
-//    private Map<String, Integer> fileDownloadHistoryList;
     private List<FileDownloadHistoryEntry> fileDownloadHistoryList;
+    
+    // helps setting up the rmi registry
+    private RegistryHelper registryHelper;
 
     // the proxy shell
     private Shell shell;
@@ -239,7 +241,7 @@ public class Proxy {
         ProxyManagementHandler proxyManagementHandler = new ProxyManagementHandler();  
         
         // starting registry
-        RegistryHelper registryHelper = RegistryHelper.getInstance();
+        registryHelper = RegistryHelper.getInstance();
         registryHelper.startRegistry(proxyManagementHandler);
         
         // Instantiate SubscriptionHandler
@@ -1264,8 +1266,9 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
             // clean up
             pool.shutdownNow();
             
-            // clear subscriptions
+            // clear subscriptions and unexport object(s)
             subscriptionHandler.removeAllSubscriptions();
+            registryHelper.stopRegistry();
 
             DatagramSocket aliveSocket = keepAliveListener.getAliveSocket();
             if(aliveSocket != null) {
