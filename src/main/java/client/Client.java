@@ -815,6 +815,7 @@ public class Client {
             logger.info("Exiting shell.");
 
             // clean up
+            UnicastRemoteObject.unexportObject(this, true);
             pool.shutdownNow();
             try {
                 proxySocket.close();
@@ -854,13 +855,13 @@ public class Client {
         @Override
         @Command
         public MessageResponse readQuorum() throws RemoteException {
-            return new MessageResponse("Read-Quorum is set to " + proxyManagementComponent.getReadQuorum() + ".");
+            return new MessageResponse("Read-Quorum is set to " + proxyManagementComponent.getProxyReadQuorum() + ".");
         }
 
         @Override
         @Command
         public MessageResponse writeQuorum() throws RemoteException {
-            return new MessageResponse("Write-Quorum is set to " + proxyManagementComponent.getWriteQuorum() + ".");
+            return new MessageResponse("Write-Quorum is set to " + proxyManagementComponent.getProxyWriteQuorum() + ".");
         }
 
         @Override
@@ -882,7 +883,7 @@ public class Client {
             try {
                 proxyManagementComponent.subscribe(subscribeRequest);
             } catch (AuthenticationException e) {
-                return new MessageResponse("Credentials are wrong.");
+                return new MessageResponse("User is not logged in.");
             } catch (FileNotFoundException e) {
                 return new MessageResponse("File not found");
             }

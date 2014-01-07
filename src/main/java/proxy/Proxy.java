@@ -1305,17 +1305,13 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
     public class ProxyManagementHandler implements IProxyManagementComponent {
 
         @Override
-        public Integer getReadQuorum() {
-            // TODO Auto-generated method stub
-            logger.debug("getReadQuorum");
-            return -1;
+        public Integer getProxyReadQuorum() {
+            return getReadQuorum();
         }
 
         @Override
-        public Integer getWriteQuorum() {
-            // TODO Auto-generated method stub
-            logger.debug("getWriteQuorum");
-            return -1;
+        public Integer getProxyWriteQuorum() {
+            return getWriteQuorum();
         }
 
         @Override
