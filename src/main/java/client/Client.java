@@ -869,6 +869,10 @@ public class Client {
         public MessageResponse topThreeDownloads() throws RemoteException {
             Map<String, Integer> list = proxyManagementComponent.getTopThree();
             String message = "Top Three Downloads:";
+            
+            if (list.isEmpty())
+                return new MessageResponse(message + "\n...No download occured yet...");
+            
             int index = 1;
             for (Entry<String, Integer> e: list.entrySet()) {
                 message += "\n" + index++ + ". " + e.getKey() + " " + e.getValue();

@@ -1316,10 +1316,10 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
 
         @Override
         public Map<String, Integer> getTopThree() {
-            
             Collections.sort(fileDownloadHistoryList);
-            Map<String, Integer> resultMap = new HashMap<String, Integer>();
+            Map<String, Integer> resultMap = new LinkedHashMap<String, Integer>();
             
+            // test - can be removed
 //            addToDownloadHistoryEntry("asd");
 //            addToDownloadHistoryEntry("asd");
 //            addToDownloadHistoryEntry("asd");
@@ -1329,13 +1329,6 @@ logger.info("Caught ExecutionExcpetion while waiting for shell.");
 //            addToDownloadHistoryEntry("asd3");
 //            addToDownloadHistoryEntry("asd3");
 //            addToDownloadHistoryEntry("asd4");
-            
-//            for (int i = fileDownloadHistoryList.size() - 1; i > -1; i--) {
-//                FileDownloadHistoryEntry fileDownloadHistoryEntry = fileDownloadHistoryList.get(i);
-//                resultMap.put(fileDownloadHistoryEntry.filename, fileDownloadHistoryEntry.downloadCounter);
-//            }
-            
-            // TODO adjust order
             
             for (int i = 0; i < fileDownloadHistoryList.size() && i < 3; i++) {
                 FileDownloadHistoryEntry fileDownloadHistoryEntry = fileDownloadHistoryList.get(i);
