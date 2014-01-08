@@ -184,9 +184,11 @@ public class Client {
             Registry registry = LocateRegistry.getRegistry(proxyHost, proxyRmiPort);
             proxyManagementComponent = (IProxyManagementComponent) registry.lookup(bindingName); 
         } catch (RemoteException e) {
-            logger.error("Failed locating registry", e);
+            logger.error("Failed locating registry");
+            System.exit(1);
         } catch (NotBoundException e) {
-            logger.error("Failed looking up binding name", e);
+            logger.error("Failed looking up binding name");
+            System.exit(1);
         }
 
         // read proxy pub key
