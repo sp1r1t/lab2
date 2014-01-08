@@ -23,7 +23,9 @@ public class SubscriptionRequest implements Serializable {
 
     private final ISubscriptionListener subscriptionListener;
     
-    public SubscriptionRequest(String username, String filename, int numberOfDownloads, ISubscriptionListener subscriptionListener) {
+    public SubscriptionRequest(String username, String filename, 
+                               int numberOfDownloads, 
+                               ISubscriptionListener subscriptionListener) {
         this.username = username;
         this.filename = filename;
         this.numberOfDownloads = numberOfDownloads;

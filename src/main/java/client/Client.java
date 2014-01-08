@@ -882,7 +882,7 @@ public class Client {
             try {
                 proxyManagementComponent.subscribe(subscribeRequest);
             } catch (AuthenticationException e) {
-                return new MessageResponse("Credentials are wrong.");
+                return new MessageResponse("You are not logged in.");
             } catch (FileNotFoundException e) {
                 return new MessageResponse("File not found");
             }

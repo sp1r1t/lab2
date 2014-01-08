@@ -246,18 +246,6 @@ public class Proxy {
         subscriptionHandler = new SubscriptionHandler();
 
         System.out.println("Proxy started."); 
-/*
-// for now join shell
-try {
-shellfuture.get();
-} catch (InterruptedException x) {
-logger.info("Caught interrupt while waiting for shell.");
-} catch (ExecutionException x) {
-logger.info("Caught ExecutionExcpetion while waiting for shell.");
-}
-*/
-        
-        logger.info("Closing main");
     }
 
     public IProxyCli getCli() {

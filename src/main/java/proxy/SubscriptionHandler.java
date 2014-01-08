@@ -64,11 +64,18 @@ public class SubscriptionHandler {
     }
 
     public void removeSubscription(String username) {
+        Subscription toRemove = null;
         for (Subscription s : list) {
             if (s.subscriptionRequest.getUsername().equals(username)) {
-                list.remove(s);
+                //list.remove(s);
+                toRemove = s;
+                break;
             }
         }
+        if (toRemove != null) {
+            list.remove(toRemove);
+        }
+
     }
 
     public void removeAllSubscriptions() {
