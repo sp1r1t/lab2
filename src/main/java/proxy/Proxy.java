@@ -68,8 +68,10 @@ public class Proxy {
     private Set<String> fileCache;
     
     // file history 
-//    private Map<String, Integer> fileDownloadHistoryList;
     private List<FileDownloadHistoryEntry> fileDownloadHistoryList;
+    
+    // helps setting up the rmi registry
+    private RegistryHelper registryHelper;
 
     // the proxy shell
     private Shell shell;
@@ -239,7 +241,7 @@ public class Proxy {
         ProxyManagementHandler proxyManagementHandler = new ProxyManagementHandler();  
         
         // starting registry
-        RegistryHelper registryHelper = RegistryHelper.getInstance();
+        registryHelper = RegistryHelper.getInstance();
         registryHelper.startRegistry(proxyManagementHandler);
         
         // Instantiate SubscriptionHandler
@@ -1252,8 +1254,9 @@ public class Proxy {
             // clean up
             pool.shutdownNow();
             
-            // clear subscriptions
+            // clear subscriptions and unexport object(s)
             subscriptionHandler.removeAllSubscriptions();
+            registryHelper.stopRegistry();
 
             DatagramSocket aliveSocket = keepAliveListener.getAliveSocket();
             if(aliveSocket != null) {
@@ -1293,25 +1296,21 @@ public class Proxy {
     public class ProxyManagementHandler implements IProxyManagementComponent {
 
         @Override
-        public Integer getReadQuorum() {
-            // TODO Auto-generated method stub
-            logger.debug("getReadQuorum");
-            return -1;
+        public Integer getProxyReadQuorum() {
+            return getReadQuorum();
         }
 
         @Override
-        public Integer getWriteQuorum() {
-            // TODO Auto-generated method stub
-            logger.debug("getWriteQuorum");
-            return -1;
+        public Integer getProxyWriteQuorum() {
+            return getWriteQuorum();
         }
 
         @Override
         public Map<String, Integer> getTopThree() {
-            
             Collections.sort(fileDownloadHistoryList);
-            Map<String, Integer> resultMap = new HashMap<String, Integer>();
+            Map<String, Integer> resultMap = new LinkedHashMap<String, Integer>();
             
+            // test - can be removed
 //            addToDownloadHistoryEntry("asd");
 //            addToDownloadHistoryEntry("asd");
 //            addToDownloadHistoryEntry("asd");
@@ -1321,13 +1320,6 @@ public class Proxy {
 //            addToDownloadHistoryEntry("asd3");
 //            addToDownloadHistoryEntry("asd3");
 //            addToDownloadHistoryEntry("asd4");
-            
-//            for (int i = fileDownloadHistoryList.size() - 1; i > -1; i--) {
-//                FileDownloadHistoryEntry fileDownloadHistoryEntry = fileDownloadHistoryList.get(i);
-//                resultMap.put(fileDownloadHistoryEntry.filename, fileDownloadHistoryEntry.downloadCounter);
-//            }
-            
-            // TODO adjust order
             
             for (int i = 0; i < fileDownloadHistoryList.size() && i < 3; i++) {
                 FileDownloadHistoryEntry fileDownloadHistoryEntry = fileDownloadHistoryList.get(i);

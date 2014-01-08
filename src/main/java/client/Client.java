@@ -815,6 +815,7 @@ public class Client {
             logger.info("Exiting shell.");
 
             // clean up
+            UnicastRemoteObject.unexportObject(this, true);
             pool.shutdownNow();
             try {
                 proxySocket.close();
@@ -854,13 +855,13 @@ public class Client {
         @Override
         @Command
         public MessageResponse readQuorum() throws RemoteException {
-            return new MessageResponse("Read-Quorum is set to " + proxyManagementComponent.getReadQuorum() + ".");
+            return new MessageResponse("Read-Quorum is set to " + proxyManagementComponent.getProxyReadQuorum() + ".");
         }
 
         @Override
         @Command
         public MessageResponse writeQuorum() throws RemoteException {
-            return new MessageResponse("Write-Quorum is set to " + proxyManagementComponent.getWriteQuorum() + ".");
+            return new MessageResponse("Write-Quorum is set to " + proxyManagementComponent.getProxyWriteQuorum() + ".");
         }
 
         @Override
@@ -868,6 +869,10 @@ public class Client {
         public MessageResponse topThreeDownloads() throws RemoteException {
             Map<String, Integer> list = proxyManagementComponent.getTopThree();
             String message = "Top Three Downloads:";
+            
+            if (list.isEmpty())
+                return new MessageResponse(message + "\n...No download occured yet...");
+            
             int index = 1;
             for (Entry<String, Integer> e: list.entrySet()) {
                 message += "\n" + index++ + ". " + e.getKey() + " " + e.getValue();

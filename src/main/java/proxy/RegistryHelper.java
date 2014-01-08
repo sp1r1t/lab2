@@ -1,6 +1,7 @@
 package proxy;
 
 import java.rmi.AlreadyBoundException;
+import java.rmi.NoSuchObjectException;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
@@ -40,6 +41,8 @@ public class RegistryHelper {
     private int proxyRmiPort;
     private String keysDir;
 
+    private ProxyManagementHandler proxyManagementHandler;
+
     private RegistryHelper() {
         Config config = new Config(PROPERTYFILENAME);
         
@@ -53,6 +56,7 @@ public class RegistryHelper {
      * Binds registry to the defined port
      */
     public void startRegistry(ProxyManagementHandler proxyManagementHandler) {
+        this.proxyManagementHandler = proxyManagementHandler;
         // try to find existing registry
 //        try {
 //            // try to get existing registry
@@ -76,6 +80,14 @@ public class RegistryHelper {
             logger.error("Creating registry failed (RemoteException)", e);
         } catch (AlreadyBoundException e) {
             logger.error("Creating registry failed (AlreadyBoundException)", e);
+        }
+    }
+    
+    public void stopRegistry() {
+        try {
+            UnicastRemoteObject.unexportObject(proxyManagementHandler, true);
+        } catch (NoSuchObjectException e) {
+            logger.warn("Couldn't unexport object: " + proxyManagementHandler.getClass().getSimpleName());
         }
     }
 

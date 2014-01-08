@@ -21,14 +21,14 @@ public interface IProxyManagementComponent extends Remote {
      * @return
      * @throws RemoteException
      */
-    Integer getReadQuorum() throws RemoteException;
+    Integer getProxyReadQuorum() throws RemoteException;
     
     /**
      * This command returns the number of Write-Quorums that are currently used for the replication mechanism. 
      * @return
      * @throws RemoteException
      */
-    Integer getWriteQuorum() throws RemoteException;
+    Integer getProxyWriteQuorum() throws RemoteException;
     
     /**
      * This command retrieves a sorted list that contains the 3 files that got downloaded the most. Where the first file in the list, represents the file that got downloaded the most.
